@@ -1,14 +1,14 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::Cell;
 
-struct Word<C> {
-    name: String,
-    immediate: bool,
-    hidden: bool,
-    xt: C,
+#[derive(Copy, Clone, Debug)]
+pub struct Word<C> {
+    pub immediate: bool,
+    pub hidden: bool,
+    pub xt: C,
 }
 
 pub struct WordList<C>(HashMap<String, Word<C>>);
@@ -16,6 +16,17 @@ pub struct WordList<C>(HashMap<String, Word<C>>);
 impl<C> WordList<C> {
     pub fn new() -> Self {
         WordList(HashMap::new())
+    }
+
+    pub fn define(&mut self, name: &str, xt: C) {
+        self.0.insert(
+            name.into(),
+            Word {
+                immediate: false,
+                hidden: false,
+                xt: xt,
+            },
+        );
     }
 }
 
@@ -39,5 +50,38 @@ impl<C: Cell> Dict<C> {
             word_lists: word_lists.into_iter().map(Rc::clone).collect(),
             immediate_word_lists: immediate_word_lists.into_iter().map(Rc::clone).collect(),
         }
+    }
+
+    fn find_word<P>(
+        predicate: P,
+        word_lists: &[Rc<RefCell<WordList<C>>>],
+        name: &str,
+    ) -> Option<Word<C>>
+    where
+        P: Fn(&Word<C>) -> bool,
+    {
+        for word_list in word_lists.iter() {
+            let words = word_list.borrow();
+            if let Some(word) = words.0.get(name) {
+                if !word.hidden && predicate(word) {
+                    return Some(*word);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get(&self, name: &str, immediate_mode: bool) -> Option<Word<C>> {
+        Self::find_word(|_| true, &self.word_lists, name).or_else(|| {
+            if immediate_mode {
+                Self::find_word(|_| true, &self.immediate_word_lists, name)
+            } else {
+                Self::find_word(|w| w.immediate, &self.immediate_word_lists, name)
+            }
+        })
+    }
+
+    pub fn words_mut(&mut self) -> RefMut<WordList<C>> {
+        self.word_lists[0].borrow_mut()
     }
 }

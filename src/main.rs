@@ -12,7 +12,8 @@ use byteorder::LittleEndian;
 use failure::{Error, ResultExt};
 use structopt::StructOpt;
 
-use avrth::forth::vm;
+use avrth::avr_asm;
+use avrth::forth::vm::{self, Vm, VmError};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "avrth", about = "AVR Forth implementation")]
@@ -43,17 +44,26 @@ enum Command {
     },
 }
 
-fn compile_program<O: io::Write, I: IntoIterator>(_output: O, input_files: I) -> Result<(), Error>
+fn make_standard_vm<R>(stdin: R) -> Vm<u16, LittleEndian>
 where
-    I::Item: AsRef<Path>,
+    R: io::Read + 'static,
 {
-    let mut vm = vm::Vm::<u16, LittleEndian>::new(&vm::Options {
+    Vm::<u16, LittleEndian>::new(vm::Options {
         ram_size: 2048,
         ram_start: 36,
         rstack_size: 40,
         flash_size: 32 * 1024,
         n_interrupts: 1,
-    }).dictionary(vm::Dictionary::Target);
+        stdin: Box::new(stdin),
+        assembler: Box::new(avr_asm::AvrAsm::new(avr_asm::Options {})),
+    })
+}
+
+fn compile_program<O: io::Write, I: IntoIterator>(_output: O, input_files: I) -> Result<(), Error>
+where
+    I::Item: AsRef<Path>,
+{
+    let mut vm = make_standard_vm(io::stdin()).dictionary(vm::Dictionary::Target);
     for path in input_files.into_iter() {
         let file = vm.intern_file(File::open(path.as_ref())?);
         vm.stack_push(file);
@@ -63,12 +73,26 @@ where
     Ok(())
 }
 
-fn run_input<R: io::Read>(_input: R) -> Result<(), Error> {
-    unimplemented!()
+fn run_repl() {
+    let mut vm = make_standard_vm(io::stdin());
+    loop {
+        // FIXME: deal with EOF, unexpected errors
+        match vm.run("quit") {
+            Err(error @ VmError::ForthError(_)) => {
+                eprintln!("{}", error);
+            }
+            Err(error) => {
+                eprintln!("{}", error);
+                break;
+            }
+            Ok(()) => break,
+        }
+    }
 }
 
 fn run_program(file: &Path) -> Result<(), Error> {
-    run_input(File::open(file)?)
+    let mut vm = make_standard_vm(File::open(file)?);
+    Ok(vm.run("quit")?)
 }
 
 fn run_tethered(_tty: &Path) -> Result<(), Error> {
@@ -92,7 +116,10 @@ fn main() -> Result<(), Error> {
         }
         Some(Command::Tethered { tty }) => run_tethered(&tty),
         Some(Command::Run { file }) => run_program(&file),
-        None => run_input(io::stdin()),
+        None => {
+            run_repl();
+            Ok(())
+        }
     }
     // let args = App::new("avrth")
     //     .arg(Arg::with_name("tethered")
