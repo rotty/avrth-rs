@@ -36,10 +36,27 @@ impl<'a> Parser<'a> {
                 .unwrap_or(self.input.len() - start);
             let token = &self.input[start..start + len];
             self.pos = start + len;
-            if let Some(n) = token.parse().ok() {
-                Some(Token::Int(n))
-            } else {
-                Some(Token::Ident(token))
+            match token {
+                "s\"" => {
+                    if self.pos == self.input.len() {
+                        unimplemented!(); // TODO: unterminated string literal
+                    }
+                    if let Some(end) = self.input[self.pos + 1..].find('"') {
+                        let end_pos = self.pos + 1 + end;
+                        let literal = &self.input[self.pos + 1..end_pos];
+                        self.pos = end_pos + 1;
+                        Some(Token::StringLiteral(literal))
+                    } else {
+                        unimplemented!(); // TODO: unterminated string literal
+                    }
+                }
+                _ => {
+                    if let Some(n) = token.parse().ok() {
+                        Some(Token::Int(n))
+                    } else {
+                        Some(Token::Ident(token))
+                    }
+                }
             }
         } else {
             None
@@ -96,6 +113,18 @@ mod tests {
                 Token::Ident("world"),
                 Token::Int(-42),
                 Token::Ident("@"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_string_literal() {
+        assert_eq!(
+            parse_vec(r#"hello s" this is a string" -42"#),
+            vec![
+                Token::Ident("hello"),
+                Token::StringLiteral("this is a string"),
+                Token::Int(-42),
             ]
         );
     }
