@@ -10,7 +10,6 @@ use std::ops::{Add, Sub};
 use std::rc::Rc;
 
 use byteorder::ByteOrder;
-use failure::Fail;
 use num_traits::int::PrimInt;
 use num_traits::NumCast;
 

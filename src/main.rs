@@ -2,6 +2,7 @@ extern crate avrth;
 
 extern crate byteorder;
 extern crate failure;
+#[macro_use]
 extern crate structopt;
 
 use std::fs::File;
