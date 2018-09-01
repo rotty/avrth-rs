@@ -35,6 +35,8 @@ pub struct Dict<C: Cell> {
     here_start: C,
     word_lists: Vec<Rc<RefCell<WordList<C>>>>,
     immediate_word_lists: Vec<Rc<RefCell<WordList<C>>>>,
+    dp: C,
+    here: C,
 }
 
 impl<C: Cell> Dict<C> {
@@ -49,7 +51,17 @@ impl<C: Cell> Dict<C> {
             here_start: here_start,
             word_lists: word_lists.into_iter().map(Rc::clone).collect(),
             immediate_word_lists: immediate_word_lists.into_iter().map(Rc::clone).collect(),
+            dp: start,
+            here: here_start,
         }
+    }
+
+    pub fn dp(&self) -> C {
+        self.dp
+    }
+
+    pub fn set_dp(&mut self, address: C) {
+        self.dp = address
     }
 
     fn find_word<P>(

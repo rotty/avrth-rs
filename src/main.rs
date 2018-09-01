@@ -13,8 +13,8 @@ use byteorder::LittleEndian;
 use failure::{Error, ResultExt};
 use structopt::StructOpt;
 
-use avrth::avr_asm;
-use avrth::forth::vm::{self, Vm, VmError};
+use avrth::forth::vm::{self, primitives, Vm, VmError};
+use avrth::target::shim::ShimTarget;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "avrth", about = "AVR Forth implementation")]
@@ -45,7 +45,7 @@ enum Command {
     },
 }
 
-fn make_standard_vm<R>(stdin: R) -> Vm<u16, LittleEndian>
+fn make_standard_vm<R>(stdin: R) -> Result<Vm<u16, LittleEndian>, Error>
 where
     R: io::Read + 'static,
 {
@@ -55,8 +55,11 @@ where
         rstack_size: 40,
         flash_size: 32 * 1024,
         n_interrupts: 1,
+        host_ram_size: 64 * 1024,
+        host_code_size: 32 * 1024,
         stdin: Box::new(stdin),
-        assembler: Box::new(avr_asm::AvrAsm::new(avr_asm::Options {})),
+        target: Box::new(ShimTarget::new()),
+        layout: vec![(vm::Dictionary::Host, vec![primitives::load])],
     })
 }
 
@@ -64,7 +67,8 @@ fn compile_program<O: io::Write, I: IntoIterator>(_output: O, input_files: I) ->
 where
     I::Item: AsRef<Path>,
 {
-    let mut vm = make_standard_vm(io::stdin()).dictionary(vm::Dictionary::Target);
+    let mut vm = make_standard_vm(io::stdin())?;
+    vm.set_dictionary(vm::Dictionary::Target);
     for path in input_files.into_iter() {
         let file = vm.intern_file(File::open(path.as_ref())?);
         vm.stack_push(file);
@@ -74,8 +78,8 @@ where
     Ok(())
 }
 
-fn run_repl() {
-    let mut vm = make_standard_vm(io::stdin());
+fn run_repl() -> Result<(), Error> {
+    let mut vm = make_standard_vm(io::stdin())?;
     loop {
         // FIXME: deal with EOF, unexpected errors
         match vm.run("quit") {
@@ -89,10 +93,11 @@ fn run_repl() {
             Ok(()) => break,
         }
     }
+    Ok(())
 }
 
 fn run_program(file: &Path) -> Result<(), Error> {
-    let mut vm = make_standard_vm(File::open(file)?);
+    let mut vm = make_standard_vm(File::open(file)?)?;
     Ok(vm.run("quit")?)
 }
 
@@ -118,26 +123,8 @@ fn main() -> Result<(), Error> {
         Some(Command::Tethered { tty }) => run_tethered(&tty),
         Some(Command::Run { file }) => run_program(&file),
         None => {
-            run_repl();
+            run_repl()?;
             Ok(())
         }
     }
-    // let args = App::new("avrth")
-    //     .arg(Arg::with_name("tethered")
-    //          .short("t")
-    //          .long("tethered"))
-    //     .arg(Arg::with_name("output")
-    //          .short("o")
-    //          .long("output")
-    //          .takes_value(true)
-    //          .value_name("FILE")
-    //          .help("Write output to FILE"))
-    //     .group(ArgGroup::with_name("mode").args(&["compile", "tethered"]))
-    //     .get_matches();
-
-    // if args.is_present("compile") {
-    //     println!("Compile set");
-    // } else {
-    //     println!("Compile not set");
-    // }
 }

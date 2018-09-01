@@ -3,6 +3,8 @@ extern crate byteorder;
 extern crate failure;
 extern crate num_traits;
 
-pub mod asm;
-pub mod avr_asm;
+#[cfg(test)]
+extern crate quickcheck;
+
 pub mod forth;
+pub mod target;
