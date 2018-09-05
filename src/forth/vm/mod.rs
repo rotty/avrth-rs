@@ -1,4 +1,4 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::fs;
@@ -15,11 +15,14 @@ use num_traits::int::PrimInt;
 use num_traits::{NumCast, WrappingAdd, WrappingSub};
 
 mod dict;
-pub mod primitives;
-mod vocables;
+pub mod vocables;
+
+#[cfg(test)]
+mod test_util;
 
 use self::dict::{Dict, Word, WordList};
 use self::vocables::{SourceArena, Vocable, Vocabulary};
+use forth::reader::Token;
 use target::Target;
 
 #[derive(Debug, Copy, Clone)]
@@ -49,6 +52,14 @@ pub trait Cell:
         let mask: isize = NumCast::from(Self::max_value()).unwrap();
         NumCast::from(n.bitand(mask)).unwrap()
     }
+    fn to_int(self) -> isize;
+    fn from_bool(b: bool) -> Self {
+        if b {
+            Self::max_value()
+        } else {
+            Self::zero()
+        }
+    }
 }
 
 impl Cell for u16 {
@@ -58,6 +69,14 @@ impl Cell for u16 {
     fn write<B: ByteOrder>(self, buf: &mut [u8]) {
         B::write_u16(buf, self);
     }
+    fn to_int(self) -> isize {
+        let n = self as isize;
+        if self >= 0x8000 {
+            -(0x1000 - n)
+        } else {
+            n
+        }
+    }
 }
 
 type Interpreter<C, B> = fn(&mut Vm<C, B>, C) -> Result<(), VmError>;
@@ -66,6 +85,8 @@ type VocabularyLoader<C, B> = fn(&mut SourceArena) -> Result<Vocabulary<C, B>, E
 pub struct Vm<C: Cell, B: ByteOrder> {
     parameters: Parameters<C>,
     current_dictionary: Dictionary,
+    current_word_name: Option<String>,
+    immediate_mode: bool,
     host_dict: Dict<C>,
     target_dict: Dict<C>,
     interpreters: HashMap<C, Interpreter<C, B>>,
@@ -76,6 +97,7 @@ pub struct Vm<C: Cell, B: ByteOrder> {
     rsp: C,
     ip: C,
     files: Interns<C, File>,
+    do_colon_address: C,
     _byteorder: PhantomData<B>,
 }
 
@@ -137,6 +159,8 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let mut vm = Vm {
             parameters: Parameters { sp0: sp0 },
             current_dictionary: Dictionary::Target,
+            current_word_name: None,
+            immediate_mode: false,
             target_dict: Dict::new(
                 C::zero(),
                 here0,
@@ -156,7 +180,8 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
             files: files,
             sp: sp0,
             rsp: rsp0,
-            ip: C::zero(), // zero is the trap address
+            ip: C::zero(),               // zero is the trap address
+            do_colon_address: C::zero(), // will be updated below
             _byteorder: PhantomData,
         };
         let dp = vm.dp();
@@ -164,22 +189,25 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         vm.set_dp(new_dp);
         let colon_pfa = vm.target.symbol("DO_COLON").unwrap();
         vm.register_interpreter(colon_pfa, Self::colon_interpreter);
+        vm.words_mut().define("(:)", colon_pfa, false, false);
+        vm.do_colon_address = colon_pfa;
+        let mut source_arena = SourceArena::new();
         for (dict, vocabularies) in options.layout {
             vm.set_dictionary(dict);
             for loader in vocabularies {
-                let mut source_arena = SourceArena::new();
                 let vocabulary = loader(&mut source_arena)?;
-                vm.compile_vocabulary(&vocabulary);
+                vm.compile_vocabulary(&vocabulary)?;
             }
         }
         Ok(vm)
     }
 
     fn colon_interpreter(&mut self, xt: C) -> Result<(), VmError> {
+        println!("colon_interpreter: ip={:?} xt={:?}", self.ip, xt);
         let ip = self.ip;
         self.rstack_push(ip);
         self.ip = Self::xt_to_pfa(xt);
-        while self.ip > C::zero() {
+        while self.ip != C::zero() {
             let xt = self.code_cell(self.ip);
             self.ip = self.ip + C::one();
             self.execute_xt(xt)?;
@@ -187,19 +215,96 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         Ok(())
     }
 
-    fn compile_vocabulary(&mut self, vocabulary: &Vocabulary<C, B>) {
+    fn do_literal_xt(&self) -> Result<C, VmError> {
+        // TODO: maybe memoize this
+        self.word_xt("(literal)")
+    }
+
+    fn compile_vocabulary(&mut self, vocabulary: &Vocabulary<C, B>) -> Result<(), VmError> {
         for (name, vocable) in vocabulary.iter() {
+            println!(
+                "compile: {} dp={:?}, vocable={:?}",
+                name,
+                self.dp(),
+                vocable
+            );
             match vocable {
                 Vocable::Primitive { run } => {
                     let xt = self.dp();
-                    self.words_mut().define(name, xt);
+                    self.words_mut().define(name, xt, false, false);
                     let pfa = Self::xt_to_pfa(xt);
                     self.code_push(pfa);
                     self.register_interpreter(pfa, *run);
                 }
-                Vocable::Forth { .. } => unimplemented!(),
+                Vocable::Forth { code, immediate } => {
+                    self.compile_forth_vocable(name, code, *immediate)?;
+                }
             }
         }
+        Ok(())
+    }
+
+    fn compile_forth_vocable(&mut self, name: &str, code: &[Token], immediate: bool) -> Result<(), VmError> {
+        #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+        enum State {
+            Interpret,
+            Compile,
+        }
+        let xt = self.dp();
+        self.words_mut().define(name, xt, immediate, true);
+        let do_colon = self.do_colon_address;
+        let mut state = State::Compile;
+        self.code_push(do_colon);
+        let mut tokens = code.iter();
+        while let Some(token) = tokens.next() {
+            match token {
+                Token::Ident("'") => {
+                    match state {
+                        State::Compile => {
+                            let do_literal_xt = self.do_literal_xt()?;
+                            self.code_push(do_literal_xt);
+                        }
+                        State::Interpret => {
+                            match tokens.next() {
+                                Some(Token::Ident(name)) => {
+                                    let xt = self.word(name)?.xt;
+                                    self.stack_push(xt);
+                                }
+                                _ => unimplemented!(),
+                            }
+                        }
+                    }
+                }
+                Token::Ident("[") => {
+                    state = State::Interpret;
+                }
+                Token::Ident("]") => {
+                    state = State::Compile;
+                }
+                Token::Ident(name) => {
+                    println!("token={:?}, immediate={:?}", token, immediate);
+                    let (immediate, xt) = {
+                        let word = self.word(name)?;
+                        (word.immediate, word.xt)
+                    };
+                    if immediate || state == State::Interpret {
+                        self.execute_xt(xt)?;
+                    } else {
+                        self.code_push(xt);
+                    }
+                }
+                Token::Int(n) => {
+                    let do_literal_xt = self.do_literal_xt()?;
+                    self.code_push(do_literal_xt);
+                    self.code_push(C::from_int(*n));
+                }
+                _ => unimplemented!(),
+            }
+        }
+        let exit_xt = self.word_xt("exit").unwrap();
+        self.code_push(exit_xt);
+        self.words_mut().get_mut(name).unwrap().hidden = false;
+        Ok(())
     }
 
     pub fn set_dictionary(&mut self, d: Dictionary) {
@@ -224,8 +329,30 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         }
     }
 
+    fn here(&self) -> C {
+        self.current_dict().here()
+    }
+
+    fn set_here(&mut self, address: C) {
+        self.current_dict_mut().set_here(address);
+    }
+    
+    fn words(&self) -> Ref<WordList<C>> {
+        self.current_dict().words()
+    }
+    
     fn words_mut(&mut self) -> RefMut<WordList<C>> {
         self.current_dict_mut().words_mut()
+    }
+
+    fn current_word(&self) -> Option<Word<C>> {
+        self.current_word_name
+            .as_ref()
+            .and_then(|name| self.words().get(name).map(|w| w.clone()))
+    }
+
+    fn set_current_word_xt(&mut self, xt: C) {
+        unimplemented!()
     }
 
     fn set_dp(&mut self, address: C) {
@@ -253,6 +380,11 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         Some(w)
     }
 
+    pub fn stack_dpush(&mut self, value: isize) {
+        self.stack_push(C::from_int(value));
+        self.stack_push(C::from_int(value >> 16));
+    }
+
     fn stack_rset<O: Into<C>>(&mut self, offset: O, value: C) {
         let address = self.sp + offset.into() * C::size();
         self.ram_cell_set(address, value)
@@ -273,6 +405,11 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         contents
     }
 
+    fn rstack_rget<O: Into<C>>(&self, offset: O) -> C {
+        let address = self.rsp + offset.into() * C::size();
+        self.ram_cell_get(address)
+    }
+
     fn rstack_rset<O: Into<C>>(&mut self, offset: O, value: C) {
         let address = self.rsp + offset.into() * C::size();
         self.ram_cell_set(address, value)
@@ -281,6 +418,17 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     fn rstack_push(&mut self, value: C) {
         self.rsp = self.rsp - C::size();
         self.rstack_rset(0, value);
+    }
+
+    fn rstack_pop(&mut self) -> Option<C> {
+        // TODO: underflow checking
+        let w = self.rstack_rget(0);
+        self.rsp = self.rsp + C::size();
+        Some(w)
+    }
+    
+    fn rstack_drop_n(&mut self, count: C) {
+        self.rsp = self.rsp + count * C::size();
     }
 
     fn ram_cell_set<T: Into<C>>(&mut self, address: T, value: C) {
@@ -308,9 +456,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     pub fn run(&mut self, start_name: &str) -> Result<(), VmError> {
         self.ip = C::zero();
         let xt = self.host_xt(start_name)?;
-        let catch_xt = self
-            .word_xt("catch")
-            .ok_or_else(|| VmError::UndefinedWord("catch".into()))?;
+        let catch_xt = self.word_xt("catch")?;
         self.stack_push(xt);
         self.execute_xt(catch_xt)?;
         let error_number = self.stack_pop().ok_or_else(|| {
@@ -333,8 +479,13 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.code[address.into()]
     }
 
+    fn code_cell_set(&mut self, address: C, value: C) {
+        self.code[address.into()] = value;
+    }
+
     fn code_push(&mut self, code: C) {
         let dp = self.dp();
+        println!("code_push: {:?} {:?}", dp, code);
         self.code[dp.into()] = code;
         self.set_dp(dp + C::one());
     }
@@ -348,11 +499,12 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         })?(self, xt)
     }
 
-    fn word(&self, _name: &str) -> Option<&Word<C>> {
-        unimplemented!()
+    fn word(&self, name: &str) -> Result<Word<C>, VmError> {
+        self.current_dict().get(name, self.immediate_mode)
+            .ok_or_else(|| VmError::UndefinedWord(name.to_string()))
     }
 
-    fn word_xt(&self, name: &str) -> Option<C> {
+    fn word_xt(&self, name: &str) -> Result<C, VmError> {
         self.word(name).map(|w| w.xt)
     }
 
@@ -396,54 +548,4 @@ enum File {
     Input(Box<dyn io::Read>),
     Output(Box<dyn io::Write>),
     Fs(fs::File),
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Cursor;
-
-    use byteorder::LittleEndian;
-
-    use super::*;
-    use target::shim::ShimTarget;
-
-    fn make_test_vm<C: Cell, B: ByteOrder>() -> Result<Vm<C, B>, Error> {
-        Vm::<C, B>::new(Options {
-            ram_size: 2048,
-            ram_start: 36,
-            rstack_size: 40,
-            flash_size: 32 * 1024,
-            n_interrupts: 1,
-            host_ram_size: 64 * 1024,
-            host_code_size: 32 * 1024,
-            stdin: Box::new(Cursor::new(vec![])),
-            target: Box::new(ShimTarget::new()),
-            layout: vec![(Dictionary::Host, vec![primitives::load])],
-        })
-    }
-
-    fn run_test<C: Cell, B: ByteOrder>(stack: &[C], word: &str) -> Result<Vec<C>, Error> {
-        let mut vm = make_test_vm::<C, B>()?;
-        for entry in stack.iter().rev() {
-            vm.stack_push(*entry);
-        }
-        vm.execute_word(word)?;
-        Ok(vm.stack_contents())
-    }
-
-    #[test]
-    fn arithmetic_ops() {
-        assert_eq!(
-            run_test::<u16, LittleEndian>(&[1, 2], "+").unwrap(),
-            vec![3]
-        );
-        assert_eq!(
-            run_test::<u16, LittleEndian>(&[u16::max_value(), 10], "+").unwrap(),
-            vec![9]
-        );
-        assert_eq!(
-            run_test::<u16, LittleEndian>(&[1, 2], "-").unwrap(),
-            vec![u16::from_int(-1)]
-        );
-    }
 }

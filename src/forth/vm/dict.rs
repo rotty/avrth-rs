@@ -1,4 +1,4 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -18,15 +18,23 @@ impl<C> WordList<C> {
         WordList(HashMap::new())
     }
 
-    pub fn define(&mut self, name: &str, xt: C) {
+    pub fn define(&mut self, name: &str, xt: C, immediate: bool, hidden: bool) {
         self.0.insert(
             name.into(),
             Word {
-                immediate: false,
-                hidden: false,
+                immediate: immediate,
+                hidden: hidden,
                 xt: xt,
             },
         );
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Word<C>> {
+        self.0.get(name)
+    }
+
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Word<C>> {
+        self.0.get_mut(name)
     }
 }
 
@@ -56,12 +64,20 @@ impl<C: Cell> Dict<C> {
         }
     }
 
+    pub fn here(&self) -> C {
+        self.here
+    }
+
+    pub fn set_here(&mut self, address: C) {
+        self.here = address;
+    }
+
     pub fn dp(&self) -> C {
         self.dp
     }
 
     pub fn set_dp(&mut self, address: C) {
-        self.dp = address
+        self.dp = address;
     }
 
     fn find_word<P>(
@@ -91,6 +107,10 @@ impl<C: Cell> Dict<C> {
                 Self::find_word(|w| w.immediate, &self.immediate_word_lists, name)
             }
         })
+    }
+
+    pub fn words(&self) -> Ref<WordList<C>> {
+        self.word_lists[0].borrow()
     }
 
     pub fn words_mut(&mut self) -> RefMut<WordList<C>> {

@@ -17,6 +17,7 @@ impl<C: Cell> ShimTarget<C> {
 
 impl<C: Cell + 'static> Target<C> for ShimTarget<C> {
     fn emit_startup_code(&mut self, address: C) -> C {
+        let address = address + C::one(); // never write to address zero
         self.define("DO_COLON", address);
         address + C::one()
     }

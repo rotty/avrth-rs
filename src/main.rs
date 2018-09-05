@@ -13,7 +13,7 @@ use byteorder::LittleEndian;
 use failure::{Error, ResultExt};
 use structopt::StructOpt;
 
-use avrth::forth::vm::{self, primitives, Vm, VmError};
+use avrth::forth::vm::{self, vocables, Vm, VmError};
 use avrth::target::shim::ShimTarget;
 
 #[derive(StructOpt, Debug)]
@@ -59,7 +59,16 @@ where
         host_code_size: 32 * 1024,
         stdin: Box::new(stdin),
         target: Box::new(ShimTarget::new()),
-        layout: vec![(vm::Dictionary::Host, vec![primitives::load])],
+        layout: vec![(
+            vm::Dictionary::Host,
+            vec![
+                vocables::prim::load,
+                vocables::compiler::load,
+                vocables::derived::load,
+                vocables::compiler_high::load,
+                vocables::repl::load,
+            ],
+        )],
     })
 }
 
