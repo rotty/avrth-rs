@@ -15,11 +15,11 @@
 ;
 
 : if
-    ' (0branch) i, >mark
+    ['] (0branch) i, >mark
 ; immediate
 
 : else
-    ' (branch) i, >mark swap >resolve
+    ['] (branch) i, >mark swap >resolve
 ; immediate
 
 : then
@@ -31,29 +31,29 @@
 ; immediate
 
 : again
-    ' (branch) i, <resolve
+    ['] (branch) i, <resolve
 ; immediate
 
 : until
-    ' (0branch) i,  <resolve
+    ['] (0branch) i,  <resolve
 ; immediate
 
 : while
-    ' (0branch) i,  >mark swap
+    ['] (0branch) i,  >mark swap
 ; immediate
 
 : repeat
-    ' (branch) i,  <resolve >resolve
+    ['] (branch) i,  <resolve >resolve
 ; immediate
 
 : ?do
-    ' (?do) i, >mark <mark
+    ['] (?do) i, >mark <mark
 ; immediate
 
 : loop
-    ' (loop) i, <resolve >resolve
+    ['] (loop) i, <resolve >resolve
 ; immediate
 
 : +loop
-    ' (+loop) i, <resolve >resolve
+    ['] (+loop) i, <resolve >resolve
 ; immediate

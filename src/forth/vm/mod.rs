@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::rc::Rc;
@@ -67,6 +67,7 @@ pub struct Options<C: Cell, B: ByteOrder> {
 
 pub struct Parameters<C> {
     pub sp0: C,
+    pub rp0: C,
 }
 
 #[derive(Fail, Debug)]
@@ -81,6 +82,13 @@ impl VmError {
     fn forth_error<C: Cell>(errno: C) -> Self {
         // FIXME: proper conversion
         VmError::ForthError(NumCast::from(errno).unwrap())
+    }
+}
+
+impl From<io::Error> for VmError {
+    // TODO: keep info from io::Error
+    fn from(_e: io::Error) -> Self {
+        VmError::forth_error(37)
     }
 }
 
@@ -107,7 +115,10 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let mut files = Interns::new(1);
         files.set(0, File::Input(options.stdin));
         let mut vm = Vm {
-            parameters: Parameters { sp0: sp0 },
+            parameters: Parameters {
+                sp0: sp0,
+                rp0: rsp0,
+            },
             current_dictionary: Dictionary::Target,
             current_word_name: None,
             immediate_mode: false,
@@ -159,6 +170,12 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.ip = Self::xt_to_pfa(xt);
         while self.ip != C::zero() {
             let xt = self.code_cell(self.ip);
+            println!(
+                "colon_interpreter: ip={:?} xt={:?} stack={:?}",
+                self.ip,
+                xt,
+                self.stack_contents()
+            );
             self.ip = self.ip + C::one();
             self.execute_xt(xt)?;
         }
@@ -213,18 +230,24 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let mut tokens = code.iter();
         while let Some(token) = tokens.next() {
             match token {
-                Token::Ident("'") => match state {
-                    State::Compile => {
-                        let do_literal_xt = self.do_literal_xt()?;
-                        self.code_push(do_literal_xt);
-                    }
-                    State::Interpret => match tokens.next() {
+                Token::Ident("[']") => match state {
+                    State::Interpret => unimplemented!(),
+                    State::Compile => match tokens.next() {
                         Some(Token::Ident(name)) => {
                             let xt = self.word(name)?.xt;
-                            self.stack_push(xt);
+                            let do_literal_xt = self.do_literal_xt()?;
+                            self.code_push(do_literal_xt);
+                            self.code_push(xt);
                         }
                         _ => unimplemented!(),
                     },
+                },
+                Token::Ident("[parameter]") => match tokens.next() {
+                    Some(Token::Ident(name)) => {
+                        let value = self.get_parameter(name).unwrap();
+                        self.stack_push(value);
+                    }
+                    _ => unimplemented!(),
                 },
                 Token::Ident("[") => {
                     state = State::Interpret;
@@ -233,23 +256,58 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                     state = State::Compile;
                 }
                 Token::Ident(name) => {
-                    println!("token={:?}, immediate={:?}", token, immediate);
                     let (immediate, xt) = {
                         let word = self.word(name)?;
                         (word.immediate, word.xt)
                     };
+                    println!(
+                        "token={:?}, immediate={:?} state={:?}",
+                        token, immediate, state
+                    );
                     if immediate || state == State::Interpret {
                         self.execute_xt(xt)?;
                     } else {
                         self.code_push(xt);
                     }
                 }
-                Token::Int(n) => {
-                    let do_literal_xt = self.do_literal_xt()?;
-                    self.code_push(do_literal_xt);
-                    self.code_push(C::from_int(*n));
+                Token::Int(n) => match state {
+                    State::Compile => {
+                        let do_literal_xt = self.do_literal_xt()?;
+                        self.code_push(do_literal_xt);
+                        self.code_push(C::from_int(*n));
+                    }
+                    State::Interpret => {
+                        self.stack_push(C::from_int(*n));
+                    }
+                },
+                Token::String(s) => {
+                    let do_sliteral_xt = self.word_xt("(sliteral)")?;
+                    self.code_push(do_sliteral_xt);
+                    let len = s.len();
+                    let bytes = s.as_bytes();
+                    self.code_push(C::from_uint(len));
+                    let dst = self.dp().into();
+                    let n_complete_cells = len / size_of::<C>();
+                    for cell_idx in 0..n_complete_cells {
+                        let cell_offset = cell_idx * size_of::<C>();
+                        let mut value = C::zero();
+                        for i in 0..size_of::<C>() {
+                            value = value
+                                | C::from_uint(
+                                    (bytes[cell_offset + i] as usize) << (size_of::<C>() - (i + 1)),
+                                );
+                        }
+                        self.code[dst + cell_idx] = value;
+                    }
+                    let n_cells = if len - (n_complete_cells * size_of::<C>()) != 0 {
+                        self.code[dst + n_complete_cells] = C::zero(); // FIXME
+                        n_complete_cells + 1
+                    } else {
+                        n_complete_cells
+                    };
+                    self.set_dp(C::from_uint(dst + n_cells));
                 }
-                _ => unimplemented!(),
+                Token::Comment(_) => {}
             }
         }
         let exit_xt = self.word_xt("exit").unwrap();
@@ -335,6 +393,11 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.stack_push(C::from_uint(value & 0xFFFF));
         self.stack_push(C::from_uint(value >> 16));
     }
+    pub fn stack_dpop(&mut self) -> usize {
+        let n2 = self.stack_pop().unwrap().into();
+        let n1 = self.stack_pop().unwrap().into();
+        n1 | (n2 << 16)
+    }
 
     fn stack_rset<O: Into<C>>(&mut self, offset: O, value: C) {
         let address = self.sp + offset.into() * C::size();
@@ -392,6 +455,27 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         C::read::<B>(&self.ram[address..])
     }
 
+    fn get_parameter(&self, name: &str) -> Option<C> {
+        match name {
+            "sp0" => Some(self.parameters.sp0),
+            "rp0" => Some(self.parameters.rp0),
+            _ => None,
+        }
+    }
+
+    pub fn stdin_key(&mut self) -> Result<Option<u8>, VmError> {
+        let mut buf = [0; 1];
+        self.files
+            .get_mut(0)
+            .ok_or_else(|| VmError::forth_error(37))
+            .and_then(|f| match f {
+                File::Input(ref mut input) => Ok(input.read(&mut buf)?),
+                File::Output(_) => Err(VmError::forth_error(37)),
+                File::Fs(ref mut file) => Ok(file.read(&mut buf)?),
+            })
+            .map(|n_read| if n_read == 0 { None } else { Some(buf[0]) })
+    }
+
     pub fn intern_file(&mut self, file: fs::File) -> C {
         self.files.add(File::Fs(file))
     }
@@ -412,7 +496,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.execute_xt(catch_xt)?;
         let error_number = self.stack_pop().ok_or_else(|| {
             // FIXME: context, "stack underflow" instead of code
-            VmError::forth_error(6).into()
+            VmError::forth_error(6)
         })?;
         if error_number.is_zero() {
             Ok(())
@@ -496,6 +580,14 @@ impl<C: Cell, V> Interns<C, V> {
 
     fn set<T: Into<C>>(&mut self, id: T, value: V) {
         self.table.insert(id.into(), value);
+    }
+
+    fn get<T: Into<C>>(&self, id: T) -> Option<&V> {
+        self.table.get(&id.into())
+    }
+
+    fn get_mut<T: Into<C>>(&mut self, id: T) -> Option<&mut V> {
+        self.table.get_mut(&id.into())
     }
 }
 

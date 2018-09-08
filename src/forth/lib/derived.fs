@@ -56,6 +56,13 @@
 ;
 
 \
+\ Strings
+\
+: (sliteral)
+    r> dup dup i@ swap 1+ swap rot over 1+ 2/ + 1+ >r
+;
+
+\
 \ Control flow
 \
 : (of)

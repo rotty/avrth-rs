@@ -86,15 +86,32 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         fn run_gt(vm, ">") {
             comparator!(vm, gt, C::to_int)
         }
-
         fn run_lt(vm, "<") {
             comparator!(vm, lt, C::to_int)
         }
-
         fn run_eq(vm, "=") {
             comparator!(vm, lt, id)
         }
+        fn run_neq(vm, "<>") {
+            comparator!(vm, ne, id)
+        }
 
+        fn run_2_star(vm, "2*") {
+            let n = vm.stack_pop().unwrap();
+            vm.stack_push(n * C::from_uint(2));
+            Ok(())
+        }
+        fn run_2_slash(vm, "2/") {
+            let n = vm.stack_pop().unwrap();
+            vm.stack_push(n / C::from_uint(2));
+            Ok(())
+        }
+        fn run_rshift(vm, "rshift") {
+            let n = vm.stack_pop().unwrap().to_int();
+            let u1 = vm.stack_pop().unwrap().to_uint();
+            vm.stack_push(C::from_uint(u1 >> n));
+            Ok(())
+        }
         fn run_um_star(vm, "um*") {
             let u2 = vm.stack_pop().unwrap().into();
             let u1 = vm.stack_pop().unwrap().into();
@@ -107,12 +124,17 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             vm.stack_dpush((n1 * n2) as usize);
             Ok(())
         }
-
         fn run_slash_mod(vm, "/mod") {
             let n2 = vm.stack_pop().unwrap().to_int();
             let n1 = vm.stack_pop().unwrap().to_int();
             vm.stack_push(C::from_int(n1 % n2));
             vm.stack_push(C::from_int(n1 / n2));
+            Ok(())
+        }
+        fn run_dplus(vm, "d+") {
+            let n2 = vm.stack_dpop();
+            let n1 = vm.stack_dpop();
+            vm.stack_dpush(n1.wrapping_add(n2));
             Ok(())
         }
 
@@ -188,6 +210,26 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             Ok(())
         }
 
+        // VM register manipulation
+        fn run_sp_store(vm, "sp!") {
+            vm.sp = vm.stack_pop().unwrap();
+            Ok(())
+        }
+        fn run_sp_fetch(vm, "sp@") {
+            let sp = vm.sp;
+            vm.stack_push(sp);
+            Ok(())
+        }
+        fn run_rp_store(vm, "rp!") {
+            vm.rsp = vm.stack_pop().unwrap();
+            Ok(())
+        }
+        fn run_rp_fetch(vm, "rp@") {
+            let rsp = vm.rsp;
+            vm.stack_push(rsp);
+            Ok(())
+        }
+
         // Memory access
         fn run_fetch(vm, "@") {
             let address = vm.stack_pop().unwrap();
@@ -220,8 +262,25 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             vm.ram[address.into()] = c.bitand(C::from_int(0xFF)).to_u8().unwrap();
             Ok(())
         }
+        fn run_i_fetch(vm, "i@") {
+            let address = vm.stack_pop().unwrap();
+            let value = vm.code_cell(address);
+            vm.stack_push(value);
+            Ok(())
+        }
+        fn run_i_store(vm, "i!") {
+            let address = vm.stack_pop().unwrap();
+            let w = vm.stack_pop().unwrap();
+            vm.code_cell_set(address, w);
+            Ok(())
+        }
 
         // Flow control and compiler support
+        fn run_execute(vm, "execute") {
+            let xt = vm.stack_pop().unwrap();
+            vm.execute_xt(xt)?;
+            Ok(())
+        }
         fn run_exit(vm, "exit") {
             // TODO: exit VM on return stack exhaustion?
             let return_ip = vm.rstack_pop().unwrap();
@@ -269,6 +328,11 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         }
         fn run_unloop(vm, "unloop") {
             vm.rstack_drop_n(C::from_int(3));
+            Ok(())
+        }
+        fn run_leave(vm, "leave") {
+            vm.rstack_drop_n(C::from_int(2));
+            vm.ip = vm.rstack_pop().unwrap();
             Ok(())
         }
         fn run_do_plus_loop(vm, "(+loop)") {

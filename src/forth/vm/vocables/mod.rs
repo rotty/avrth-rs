@@ -13,6 +13,7 @@ use forth::vm::{Cell, Interpreter};
 mod macros;
 pub mod compiler;
 pub mod compiler_high;
+pub mod control;
 pub mod derived;
 pub mod io;
 pub mod prim;
@@ -121,11 +122,11 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
 
         let mut state = State::TopLevel;
         let mut code = vec![];
-        let mut flush = |name: &str, code: Vec<_>| {
+        let mut flush = |name: &str, code: Vec<_>, immediate| {
             self.vocables.insert(
                 name.into(),
                 Vocable::Forth {
-                    immediate: false,
+                    immediate: immediate,
                     code: code,
                 },
             );
@@ -138,7 +139,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
                     state = State::WordName;
                 }
                 (Token::Ident(":"), State::AfterWord(name)) => {
-                    flush(name, code);
+                    flush(name, code, false);
                     code = vec![];
                     state = State::WordName;
                 }
@@ -146,7 +147,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
                     state = State::AfterWord(name);
                 }
                 (Token::Ident("immediate"), State::AfterWord(name)) => {
-                    flush(name, code);
+                    flush(name, code, true);
                     code = vec![];
                     state = State::TopLevel;
                 }
@@ -168,7 +169,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         match state {
             State::TopLevel => Ok(()),
             State::AfterWord(name) => {
-                flush(name, code);
+                flush(name, code, false);
                 Ok(())
             }
             _ => Err(format_err!("unterminated word definition")),

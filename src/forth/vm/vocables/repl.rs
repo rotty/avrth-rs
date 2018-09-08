@@ -49,6 +49,7 @@ mod tests {
             vocables::derived::load,
             vocables::compiler_high::load,
             vocables::store::load,
+            vocables::control::load,
             vocables::io::load,
             vocables::repl::load,
         ];

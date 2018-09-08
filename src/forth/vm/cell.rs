@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::{Add, BitAnd, Sub};
@@ -17,6 +17,7 @@ pub trait Cell:
     + From<<Self as Sub>::Output>
     + Into<usize>
     + Debug
+    + Display
     + 'static
 {
     fn read<B: ByteOrder>(buf: &[u8]) -> Self;
@@ -33,6 +34,9 @@ pub trait Cell:
         NumCast::from(n.bitand(mask)).unwrap()
     }
     fn to_int(self) -> isize;
+    fn to_uint(self) -> usize {
+        NumCast::from(self).unwrap()
+    }
     fn from_bool(b: bool) -> Self {
         if b {
             Self::max_value()

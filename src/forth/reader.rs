@@ -10,6 +10,7 @@
 
 pub struct Reader<'a> {
     input: &'a str,
+    after_colon: bool,
     pos: usize,
 }
 
@@ -17,6 +18,7 @@ impl<'a> Reader<'a> {
     pub fn new(input: &'a str) -> Self {
         Reader {
             input: input,
+            after_colon: false,
             pos: 0,
         }
     }
@@ -49,8 +51,12 @@ impl<'a> Reader<'a> {
                 .unwrap_or(self.input.len() - start);
             let token = &self.input[start..start + len];
             self.pos = start + len;
-            match token {
-                "\\" => {
+            match (token, self.after_colon) {
+                (":", false) => {
+                    self.after_colon = true;
+                    Some(Token::Ident(":"))
+                }
+                ("\\", false) => {
                     if self.pos == self.input.len() {
                         Some(Token::Comment("")) // TODO: correct?
                     } else if let Some(eol) = self.input[self.pos..].find('\n') {
@@ -69,9 +75,10 @@ impl<'a> Reader<'a> {
                         Some(Token::Comment(comment))
                     }
                 }
-                "(" => bracketed(self, ')', Token::Comment),
-                "s\"" => bracketed(self, '"', Token::String),
+                ("(", false) => bracketed(self, ')', Token::Comment),
+                ("s\"", false) => bracketed(self, '"', Token::String),
                 _ => {
+                    self.after_colon = false;
                     if let Some(n) = token.parse().ok() {
                         Some(Token::Int(n))
                     } else {
@@ -189,6 +196,45 @@ mod tests {
                 Token::Comment("n -- n"),
                 Token::Int(42),
                 Token::Ident("+"),
+                Token::Ident(";"),
+            ]
+        );
+    }
+
+    #[test]
+    fn define_backslash() {
+        assert_eq!(
+            read_vec(r#": \ 42 ;"#),
+            vec![
+                Token::Ident(":"),
+                Token::Ident("\\"),
+                Token::Int(42),
+                Token::Ident(";"),
+            ]
+        );
+    }
+
+    #[test]
+    fn define_bracket_open() {
+        assert_eq!(
+            read_vec(r#": ( 42 ;"#),
+            vec![
+                Token::Ident(":"),
+                Token::Ident("("),
+                Token::Int(42),
+                Token::Ident(";"),
+            ]
+        );
+    }
+
+    #[test]
+    fn define_s_quote() {
+        assert_eq!(
+            read_vec(r#": s" 42 ;"#),
+            vec![
+                Token::Ident(":"),
+                Token::Ident("s\""),
+                Token::Int(42),
                 Token::Ident(";"),
             ]
         );

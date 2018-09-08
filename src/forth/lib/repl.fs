@@ -90,6 +90,10 @@
 \
 \ Compiler support
 \
+: state
+    [ here ] literal [ 0 , ]
+;
+
 : find ( addr -- [ addr 0 ] | [ xt [-1|1]] )
     dup c@ swap 1+ swap find-name ?dup 0= if 1- 0 then
 ;
@@ -118,6 +122,16 @@
     here
 ;
 
+: '
+    parse-name find-name 0= if
+        drop -14 throw
+    then
+;
+
+: [']
+  ['] (literal) i, ' i,
+; immediate
+
 
 \
 \ The "REPL"
@@ -142,7 +156,7 @@
 : quit
   -1 begin \ f
       if sp0 sp! rp0 rp! 0 state ! then
-      state "@" "0=" if
+      state @ 0= if
           cr s" > " itype
       then
       refill
