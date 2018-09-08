@@ -9,7 +9,7 @@
     >r over > swap r> > or 0=
 ;
 
-: min
+: min ( n1 n2 -- n )
     over over > if swap then drop
 ;
 

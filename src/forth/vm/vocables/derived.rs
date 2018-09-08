@@ -33,5 +33,13 @@ mod tests {
             run_test(&v, &[42], "negate").unwrap(),
             vec![u16::from_int(-42)]
         );
+        assert_eq!(
+            run_test(&v, &[2], "1 3 within").unwrap(),
+            vec![u16::from_int(-1)]
+        );
+        assert_eq!(
+            run_test(&v, &[2, u16::from_int(-42)], "min").unwrap(),
+            vec![u16::from_int(-42)]
+        );
     }
 }

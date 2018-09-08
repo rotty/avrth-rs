@@ -3,6 +3,8 @@ use std::io::Cursor;
 use byteorder::ByteOrder;
 use failure::Error;
 
+use forth::reader::Reader;
+use forth::vm::vocables::Vocabulary;
 use forth::vm::{Cell, Dictionary, Options, Vm, VocabularyLoader};
 use target::shim::ShimTarget;
 
@@ -26,12 +28,19 @@ fn make_vm<C: Cell, B: ByteOrder>(
 pub fn run_test<C: Cell, B: ByteOrder>(
     vocabularies: &[VocabularyLoader<C, B>],
     stack: &[C],
-    word: &str,
+    code: &str,
 ) -> Result<Vec<C>, Error> {
+    let tokens: Vec<_> = Reader::new(code).tokens().collect();
     let mut vm = make_vm(vocabularies.to_vec())?;
+    let test_vocabulary = {
+        let mut v = Vocabulary::new();
+        v.define_forth_word("test", false, tokens);
+        v
+    };
+    vm.compile_vocabulary(&test_vocabulary)?;
     for entry in stack {
         vm.stack_push(*entry);
     }
-    vm.execute_word(word)?;
+    vm.execute_word("test")?;
     Ok(vm.stack_contents())
 }

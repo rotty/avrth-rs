@@ -38,7 +38,7 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
 #[cfg(test)]
 mod tests {
     use forth::vm::test_util::run_test;
-    use forth::vm::{vocables, Cell, VocabularyLoader};
+    use forth::vm::{vocables, VocabularyLoader};
 
     use byteorder::LittleEndian;
 
@@ -53,9 +53,6 @@ mod tests {
             vocables::io::load,
         ];
         // FIXME: do some real tests here
-        assert_eq!(
-            run_test(&v, &[42], "negate").unwrap(),
-            vec![u16::from_int(-42)]
-        );
+        assert_eq!(run_test(&v, &[], "").unwrap(), vec![]);
     }
 }

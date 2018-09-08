@@ -56,9 +56,20 @@ impl Cell for u16 {
     fn to_int(self) -> isize {
         let n = self as isize;
         if self >= 0x8000 {
-            -(0x1000 - n)
+            -(0x10000 - n)
         } else {
             n
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cell;
+
+    quickcheck! {
+        fn to_from_int_eq(input: u16) -> bool {
+            u16::from_int(input.to_int()) == input
         }
     }
 }

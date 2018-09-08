@@ -381,4 +381,21 @@ mod tests {
         assert_eq!(run_test(&v, &[u16::max_value(), 10], "+").unwrap(), vec![9]);
         assert_eq!(run_test(&v, &[1, 2], "-").unwrap(), vec![u16::from_int(-1)]);
     }
+
+    #[test]
+    fn comparisons() {
+        let v: Vec<VocabularyLoader<u16, LittleEndian>> = vec![vocables::prim::load];
+        assert_eq!(
+            run_test(&v, &[1, 2], "<").unwrap(),
+            vec![u16::from_bool(true)]
+        );
+        assert_eq!(
+            run_test(&v, &[2, 1], "<").unwrap(),
+            vec![u16::from_bool(false)]
+        );
+        assert_eq!(
+            run_test(&v, &[u16::from_int(-42), 0], "<").unwrap(),
+            vec![u16::from_bool(true)]
+        );
+    }
 }

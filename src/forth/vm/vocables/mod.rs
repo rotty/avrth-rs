@@ -111,6 +111,17 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         Ok(())
     }
 
+    pub fn define_forth_word(&mut self, name: &str, immediate: bool, code: Vec<Token<'a>>) {
+        self.vocables.insert(
+            name.into(),
+            Vocable::Forth {
+                immediate: immediate,
+                code: code,
+            },
+        );
+        self.names.push(name.into());
+    }
+
     pub fn define_forth_words(&mut self, reader: &mut Reader<'a>) -> Result<(), Error> {
         #[derive(Copy, Clone, Debug)]
         enum State<'a> {
@@ -122,16 +133,6 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
 
         let mut state = State::TopLevel;
         let mut code = vec![];
-        let mut flush = |name: &str, code: Vec<_>, immediate| {
-            self.vocables.insert(
-                name.into(),
-                Vocable::Forth {
-                    immediate: immediate,
-                    code: code,
-                },
-            );
-            self.names.push(name.into());
-        };
         for token in reader.tokens() {
             match (token, state) {
                 (Token::Comment(_), _) => {}
@@ -139,7 +140,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
                     state = State::WordName;
                 }
                 (Token::Ident(":"), State::AfterWord(name)) => {
-                    flush(name, code, false);
+                    self.define_forth_word(name, false, code);
                     code = vec![];
                     state = State::WordName;
                 }
@@ -147,7 +148,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
                     state = State::AfterWord(name);
                 }
                 (Token::Ident("immediate"), State::AfterWord(name)) => {
-                    flush(name, code, true);
+                    self.define_forth_word(name, true, code);
                     code = vec![];
                     state = State::TopLevel;
                 }
@@ -169,7 +170,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         match state {
             State::TopLevel => Ok(()),
             State::AfterWord(name) => {
-                flush(name, code, false);
+                self.define_forth_word(name, false, code);
                 Ok(())
             }
             _ => Err(format_err!("unterminated word definition")),

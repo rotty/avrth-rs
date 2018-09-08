@@ -10,3 +10,6 @@ structopt = "0.2"
 failure = "0.1.2"
 num-traits = "0.2.5"
 byteorder = "1.2.6"
+
+[dev-dependencies]
+quickcheck = "0.7.1"
