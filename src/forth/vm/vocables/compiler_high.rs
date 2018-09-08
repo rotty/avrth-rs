@@ -8,7 +8,7 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
     let mut v = Vocabulary::new();
     primitives! {
         v,
-        
+
         fn run_set_current(vm, "set-current") {
             let xt = vm.stack_pop().unwrap();
             vm.set_current_word_xt(xt);
@@ -33,13 +33,12 @@ mod tests {
 
     #[test]
     fn load() {
-        let v: Vec<VocabularyLoader<u16, LittleEndian>> =
-            vec![
-                vocables::prim::load,
-                vocables::compiler::load,
-                vocables::derived::load,
-                vocables::compiler_high::load,
-            ];
+        let v: Vec<VocabularyLoader<u16, LittleEndian>> = vec![
+            vocables::prim::load,
+            vocables::compiler::load,
+            vocables::derived::load,
+            vocables::compiler_high::load,
+        ];
         // FIXME: do some real tests here
         assert_eq!(
             run_test(&v, &[42], "negate").unwrap(),

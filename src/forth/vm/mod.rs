@@ -1,25 +1,23 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, VecDeque};
-use std::fmt::Debug;
 use std::fs;
-use std::hash::Hash;
 use std::io;
 use std::marker::PhantomData;
 use std::mem::size_of;
-use std::ops::{Add, BitAnd, Sub};
 use std::rc::Rc;
 
 use byteorder::ByteOrder;
 use failure::Error;
-use num_traits::int::PrimInt;
-use num_traits::{NumCast, WrappingAdd, WrappingSub};
+use num_traits::NumCast;
 
+pub mod cell;
 mod dict;
 pub mod vocables;
 
 #[cfg(test)]
 mod test_util;
 
+pub use self::cell::Cell;
 use self::dict::{Dict, Word, WordList};
 use self::vocables::{SourceArena, Vocable, Vocabulary};
 use forth::reader::Token;
@@ -29,54 +27,6 @@ use target::Target;
 pub enum Dictionary {
     Target,
     Host,
-}
-
-pub trait Cell:
-    PrimInt
-    + WrappingAdd
-    + WrappingSub
-    + From<u8>
-    + Hash
-    + From<<Self as Add>::Output>
-    + From<<Self as Sub>::Output>
-    + Into<usize>
-    + Debug
-    + 'static
-{
-    fn read<B: ByteOrder>(buf: &[u8]) -> Self;
-    fn write<B: ByteOrder>(self, buf: &mut [u8]);
-    fn size() -> Self {
-        NumCast::from(size_of::<Self>()).unwrap()
-    }
-    fn from_int(n: isize) -> Self {
-        let mask: isize = NumCast::from(Self::max_value()).unwrap();
-        NumCast::from(n.bitand(mask)).unwrap()
-    }
-    fn to_int(self) -> isize;
-    fn from_bool(b: bool) -> Self {
-        if b {
-            Self::max_value()
-        } else {
-            Self::zero()
-        }
-    }
-}
-
-impl Cell for u16 {
-    fn read<B: ByteOrder>(buf: &[u8]) -> Self {
-        B::read_u16(buf)
-    }
-    fn write<B: ByteOrder>(self, buf: &mut [u8]) {
-        B::write_u16(buf, self);
-    }
-    fn to_int(self) -> isize {
-        let n = self as isize;
-        if self >= 0x8000 {
-            -(0x1000 - n)
-        } else {
-            n
-        }
-    }
 }
 
 type Interpreter<C, B> = fn(&mut Vm<C, B>, C) -> Result<(), VmError>;
@@ -244,7 +194,12 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         Ok(())
     }
 
-    fn compile_forth_vocable(&mut self, name: &str, code: &[Token], immediate: bool) -> Result<(), VmError> {
+    fn compile_forth_vocable(
+        &mut self,
+        name: &str,
+        code: &[Token],
+        immediate: bool,
+    ) -> Result<(), VmError> {
         #[derive(Copy, Clone, Eq, PartialEq, Debug)]
         enum State {
             Interpret,
@@ -258,23 +213,19 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let mut tokens = code.iter();
         while let Some(token) = tokens.next() {
             match token {
-                Token::Ident("'") => {
-                    match state {
-                        State::Compile => {
-                            let do_literal_xt = self.do_literal_xt()?;
-                            self.code_push(do_literal_xt);
-                        }
-                        State::Interpret => {
-                            match tokens.next() {
-                                Some(Token::Ident(name)) => {
-                                    let xt = self.word(name)?.xt;
-                                    self.stack_push(xt);
-                                }
-                                _ => unimplemented!(),
-                            }
-                        }
+                Token::Ident("'") => match state {
+                    State::Compile => {
+                        let do_literal_xt = self.do_literal_xt()?;
+                        self.code_push(do_literal_xt);
                     }
-                }
+                    State::Interpret => match tokens.next() {
+                        Some(Token::Ident(name)) => {
+                            let xt = self.word(name)?.xt;
+                            self.stack_push(xt);
+                        }
+                        _ => unimplemented!(),
+                    },
+                },
                 Token::Ident("[") => {
                     state = State::Interpret;
                 }
@@ -336,11 +287,11 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     fn set_here(&mut self, address: C) {
         self.current_dict_mut().set_here(address);
     }
-    
+
     fn words(&self) -> Ref<WordList<C>> {
         self.current_dict().words()
     }
-    
+
     fn words_mut(&mut self) -> RefMut<WordList<C>> {
         self.current_dict_mut().words_mut()
     }
@@ -380,9 +331,9 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         Some(w)
     }
 
-    pub fn stack_dpush(&mut self, value: isize) {
-        self.stack_push(C::from_int(value));
-        self.stack_push(C::from_int(value >> 16));
+    pub fn stack_dpush(&mut self, value: usize) {
+        self.stack_push(C::from_uint(value & 0xFFFF));
+        self.stack_push(C::from_uint(value >> 16));
     }
 
     fn stack_rset<O: Into<C>>(&mut self, offset: O, value: C) {
@@ -426,7 +377,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.rsp = self.rsp + C::size();
         Some(w)
     }
-    
+
     fn rstack_drop_n(&mut self, count: C) {
         self.rsp = self.rsp + count * C::size();
     }
@@ -499,8 +450,12 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         })?(self, xt)
     }
 
-    fn word(&self, name: &str) -> Result<Word<C>, VmError> {
+    fn word_get(&self, name: &str) -> Option<Word<C>> {
         self.current_dict().get(name, self.immediate_mode)
+    }
+
+    fn word(&self, name: &str) -> Result<Word<C>, VmError> {
+        self.word_get(name)
             .ok_or_else(|| VmError::UndefinedWord(name.to_string()))
     }
 

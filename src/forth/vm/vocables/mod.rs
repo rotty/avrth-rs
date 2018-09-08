@@ -14,6 +14,7 @@ mod macros;
 pub mod compiler;
 pub mod compiler_high;
 pub mod derived;
+pub mod io;
 pub mod prim;
 pub mod repl;
 pub mod store;
@@ -41,9 +42,8 @@ impl SourceArena {
         match entry {
             Entry::Occupied(entry) => Ok(entry.into_mut()),
             Entry::Vacant(entry) => {
-                let content = fs::read_to_string(full_path).with_context(|_| {
-                    format!("while reading {}", full_path.display())
-                })?;
+                let content = fs::read_to_string(full_path)
+                    .with_context(|_| format!("while reading {}", full_path.display()))?;
                 Ok(entry.insert(content))
             }
         }
@@ -100,8 +100,11 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         self.names.push(name.into());
     }
 
-    pub fn load_forth_words(&mut self, arena: &'a mut SourceArena, path: &[&str])
-                            -> Result<(), Error> {
+    pub fn load_forth_words(
+        &mut self,
+        arena: &'a mut SourceArena,
+        path: &[&str],
+    ) -> Result<(), Error> {
         let mut reader = Reader::new(arena.load(path)?);
         self.define_forth_words(&mut reader)?;
         Ok(())
@@ -168,7 +171,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
                 flush(name, code);
                 Ok(())
             }
-            _ => Err(format_err!("unterminated word definition"))
+            _ => Err(format_err!("unterminated word definition")),
         }
     }
 

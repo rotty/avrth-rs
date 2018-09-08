@@ -32,3 +32,7 @@
 : does>
     (does>) i,
 ; immediate
+
+: literal
+    ' (literal) i, i,
+; immediate

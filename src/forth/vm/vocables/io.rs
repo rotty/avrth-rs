@@ -1,5 +1,3 @@
-use std::str;
-
 use byteorder::ByteOrder;
 use failure::Error;
 
@@ -10,27 +8,8 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
     let mut v = Vocabulary::new();
     primitives! {
         v,
-
-        fn run_find_name(vm, "find-name") {
-            let n = vm.stack_pop().unwrap();
-            let address = vm.stack_pop().unwrap();
-            let start = address.into();
-            let end = start + n.into();
-            let word = {
-                let name = str::from_utf8(&vm.ram[start..end]).unwrap();
-                vm.word_get(name)
-            };
-            if let Some(word) = word {
-                vm.stack_push(word.xt);
-                vm.stack_push(if word.immediate { C::one() } else { C::max_value() });
-            } else {
-                vm.stack_push(address);
-                vm.stack_push(C::zero());
-            }
-            Ok(())
-        }
     }
-    v.load_forth_words(arena, &["forth", "lib", "repl.fs"])?;
+    v.load_forth_words(arena, &["forth", "lib", "io.fs"])?;
     Ok(v)
 }
 
@@ -50,7 +29,6 @@ mod tests {
             vocables::compiler_high::load,
             vocables::store::load,
             vocables::io::load,
-            vocables::repl::load,
         ];
         // FIXME: do some real tests here
         assert_eq!(

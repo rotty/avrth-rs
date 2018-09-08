@@ -9,6 +9,10 @@
     >r over > swap r> > or 0=
 ;
 
+: min
+    over over > if swap then drop
+;
+
 : d>s
     drop
 ;
@@ -23,6 +27,25 @@
 
 : mod
     /mod drop
+;
+
+\
+\ Stack manipulation
+\
+: 2swap
+    rot >r rot r>
+;
+
+: 2dup
+    over over
+;
+
+: 2drop
+    drop drop
+;
+
+: tuck
+    swap over
 ;
 
 \

@@ -34,7 +34,7 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             let n: usize = vm.stack_pop().unwrap().into();
             let addr_to: usize = vm.stack_pop().unwrap().into();
             let addr_from: usize = vm.stack_pop().unwrap().into();
-            let mut ram = &mut vm.ram[..];
+            let ram = &mut vm.ram[..];
             for i in 1..n + 1 {
                 let offset = n - i;
                 ram[addr_to + offset] = ram[addr_from + offset];

@@ -24,8 +24,11 @@ mod tests {
 
     #[test]
     fn arithmetic_ops() {
-        let v: Vec<VocabularyLoader<u16, LittleEndian>> =
-            vec![vocables::prim::load, vocables::compiler::load, vocables::derived::load];
+        let v: Vec<VocabularyLoader<u16, LittleEndian>> = vec![
+            vocables::prim::load,
+            vocables::compiler::load,
+            vocables::derived::load,
+        ];
         assert_eq!(
             run_test(&v, &[42], "negate").unwrap(),
             vec![u16::from_int(-42)]

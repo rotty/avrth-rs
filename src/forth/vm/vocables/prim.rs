@@ -1,5 +1,6 @@
 ///! Primitive words, i.e. those that must defined both in Rust and
 ///! the target (assembly)
+use std::convert;
 use std::thread;
 use std::time;
 
@@ -49,10 +50,19 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         fn run_or(vm, "or") {
             binop!(vm, bitor, id)
         }
+        fn run_and(vm, "and") {
+            binop!(vm, bitand, id)
+        }
+
         fn run_one_plus(vm, "1+") {
             // FIXME: unwrap
             let a = vm.stack_pop().unwrap();
             vm.stack_push(a.wrapping_add(&C::one()));
+            Ok(())
+        }
+        fn run_one_minus(vm, "1-") {
+            let a = vm.stack_pop().unwrap();
+            vm.stack_push(a.wrapping_sub(&C::one()));
             Ok(())
         }
         fn run_is_zero(vm, "0=") {
@@ -61,7 +71,11 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             vm.stack_push(C::from_bool(a == C::zero()));
             Ok(())
         }
-
+        fn run_zero_gt(vm, "0>") {
+            let a = vm.stack_pop().unwrap();
+            vm.stack_push(C::from_bool(a.to_int() > 0));
+            Ok(())
+        }
         fn run_invert(vm, "invert") {
             // FIXME: unwrap
             let a = vm.stack_pop().unwrap();
@@ -76,15 +90,21 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         fn run_lt(vm, "<") {
             comparator!(vm, lt, C::to_int)
         }
-        
+
         fn run_eq(vm, "=") {
             comparator!(vm, lt, id)
         }
 
+        fn run_um_star(vm, "um*") {
+            let u2 = vm.stack_pop().unwrap().into();
+            let u1 = vm.stack_pop().unwrap().into();
+            vm.stack_dpush(u1 * u2);
+            Ok(())
+        }
         fn run_m_star(vm, "m*") {
             let n2 = vm.stack_pop().unwrap().to_int();
             let n1 = vm.stack_pop().unwrap().to_int();
-            vm.stack_dpush(n1 * n2);
+            vm.stack_dpush((n1 * n2) as usize);
             Ok(())
         }
 
@@ -101,6 +121,18 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             vm.stack_pop().unwrap();
             Ok(())
         }
+        fn run_dup(vm, "dup") {
+            let tos = vm.stack_rget(0);
+            vm.stack_push(tos);
+            Ok(())
+        }
+        fn run_qdup(vm, "?dup") {
+            let tos = vm.stack_rget(0);
+            if tos != C::zero() {
+                vm.stack_push(tos);
+            }
+            Ok(())
+        }
         fn run_swap(vm, "swap") {
             let w1 = vm.stack_rget(1);
             let w2 = vm.stack_rget(0);
@@ -111,6 +143,15 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         fn run_over(vm, "over") {
             let a = vm.stack_rget(1);
             vm.stack_push(a);
+            Ok(())
+        }
+        fn run_rot(vm, "rot") {
+            let w1 = vm.stack_rget(2);
+            let w2 = vm.stack_rget(1);
+            let w3 = vm.stack_rget(0);
+            vm.stack_rset(2, w2);
+            vm.stack_rset(1, w3);
+            vm.stack_rset(0, w1);
             Ok(())
         }
         fn run_nip(vm, "nip") {
@@ -130,6 +171,53 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             // FIXME: unwrap
             let a = vm.rstack_pop().unwrap();
             vm.stack_push(a);
+            Ok(())
+        }
+        fn run_r_fetch(vm, "r@") {
+            let a = vm.rstack_rget(0);
+            vm.stack_push(a);
+            Ok(())
+        }
+        fn run_rdrop(vm, "rdrop") {
+            vm.rstack_pop().unwrap();
+            Ok(())
+        }
+        fn run_i(vm, "i") {
+            let w = vm.rstack_rget(0);
+            vm.stack_push(w);
+            Ok(())
+        }
+
+        // Memory access
+        fn run_fetch(vm, "@") {
+            let address = vm.stack_pop().unwrap();
+            let value = vm.ram_cell_get(address);
+            vm.stack_push(value);
+            Ok(())
+        }
+        fn run_store(vm, "!") {
+            let address = vm.stack_pop().unwrap();
+            let value = vm.stack_pop().unwrap();
+            vm.ram_cell_set(address, value);
+            Ok(())
+        }
+        fn run_plus_store(vm, "+!") {
+            let address = vm.stack_pop().unwrap();
+            let n = vm.stack_pop().unwrap();
+            let value = vm.ram_cell_get(address);
+            vm.ram_cell_set(address, value.wrapping_add(&n));
+            Ok(())
+        }
+        fn run_c_fetch(vm, "c@") {
+            let address = vm.stack_pop().unwrap();
+            let c = convert::From::from(vm.ram[address.into()]);
+            vm.stack_push(c);
+            Ok(())
+        }
+        fn run_c_store(vm, "c!") {
+            let address = vm.stack_pop().unwrap();
+            let c = vm.stack_pop().unwrap();
+            vm.ram[address.into()] = c.bitand(C::from_int(0xFF)).to_u8().unwrap();
             Ok(())
         }
 
@@ -177,6 +265,10 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         fn run_do_loop(vm, "(loop)") {
             let n = vm.rstack_rget(0).wrapping_add(&C::one());
             run_loop(vm, n);
+            Ok(())
+        }
+        fn run_unloop(vm, "unloop") {
+            vm.rstack_drop_n(C::from_int(3));
             Ok(())
         }
         fn run_do_plus_loop(vm, "(+loop)") {
