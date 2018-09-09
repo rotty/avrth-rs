@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::Write;
 
 use byteorder::ByteOrder;
 use failure::Error;
@@ -19,15 +19,13 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
             Ok(())
         }
         fn run_emit(vm, "emit") {
-            let mut stdout = io::stdout();
             let code = vm.stack_pop().unwrap().to_int() as u8;
-            stdout.write(&[code])?;
-            stdout.flush()?;
+            vm.stdout_emit(code)?;
             Ok(())
         }
         fn run_dot(vm, ".") {
             let u = vm.stack_pop().unwrap();
-            write!(io::stdout(), "{}", u)?;
+            write!(vm.stdout()?, "{}", u)?;
             Ok(())
         }
     }
@@ -37,7 +35,7 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
 
 #[cfg(test)]
 mod tests {
-    use forth::vm::test_util::run_test;
+    use forth::vm::test_util::run_io_test;
     use forth::vm::{vocables, VocabularyLoader};
 
     use byteorder::LittleEndian;
@@ -52,7 +50,13 @@ mod tests {
             vocables::store::load,
             vocables::io::load,
         ];
-        // FIXME: do some real tests here
-        assert_eq!(run_test(&v, &[], "").unwrap(), vec![]);
+        assert_eq!(
+            run_io_test(&v, &[], "", r#"s" Hello World!" itype"#).unwrap(),
+            (vec![], "Hello World!".to_string())
+        );
+        assert_eq!(
+            run_io_test(&v, &[], "", r#"s" Hello" itype"#).unwrap(),
+            (vec![], "Hello".to_string())
+        );
     }
 }

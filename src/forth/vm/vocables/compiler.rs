@@ -46,4 +46,21 @@ mod tests {
             vec![u16::from_int(42)]
         );
     }
+
+    #[test]
+    fn test_repeat() {
+        let v: Vec<VocabularyLoader<u16, LittleEndian>> =
+            vec![vocables::prim::load, vocables::compiler::load];
+        let log2 = "2/ 0 begin over 0> while 1+ swap 2/ swap repeat nip";
+        assert_eq!(run_test(&v, &[42], log2).unwrap(), vec![5]);
+        assert_eq!(run_test(&v, &[567], log2).unwrap(), vec![9]);
+    }
+
+    #[test]
+    fn test_qdo_loop() {
+        let v: Vec<VocabularyLoader<u16, LittleEndian>> =
+            vec![vocables::prim::load, vocables::compiler::load];
+        let sum = "0 10 0 ?do i + loop";
+        assert_eq!(run_test(&v, &[], sum).unwrap(), vec![45]);
+    }
 }

@@ -42,7 +42,7 @@ mod tests {
     use byteorder::LittleEndian;
 
     #[test]
-    fn load() {
+    fn test_parse_numbers() {
         let v: Vec<VocabularyLoader<u16, LittleEndian>> = vec![
             vocables::prim::load,
             vocables::compiler::load,
@@ -53,7 +53,8 @@ mod tests {
             vocables::io::load,
             vocables::repl::load,
         ];
-        // FIXME: do some real tests here
-        assert_eq!(run_test(&v, &[], "").unwrap(), vec![]);
+        assert_eq!(run_test(&v, &[], "base @").unwrap(), vec![10]);
+        assert_eq!(run_test(&v, &[], "bin base @").unwrap(), vec![2]);
+        assert_eq!(run_test(&v, &[], "hex base @").unwrap(), vec![16]);
     }
 }

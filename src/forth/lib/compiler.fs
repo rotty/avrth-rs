@@ -35,15 +35,15 @@
 ; immediate
 
 : until
-    ['] (0branch) i,  <resolve
+    ['] (0branch) i, <resolve
 ; immediate
 
 : while
-    ['] (0branch) i,  >mark swap
+    ['] (0branch) i, >mark swap
 ; immediate
 
 : repeat
-    ['] (branch) i,  <resolve >resolve
+    ['] (branch) i, <resolve >resolve
 ; immediate
 
 : ?do

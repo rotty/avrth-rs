@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::rc::Rc;
@@ -61,6 +61,7 @@ pub struct Options<C: Cell, B: ByteOrder> {
     pub host_ram_size: usize,
     pub host_code_size: usize,
     pub stdin: Box<dyn io::Read>,
+    pub stdout: Box<dyn io::Write>,
     pub target: Box<dyn Target<C>>,
     pub layout: Vec<(Dictionary, Vec<VocabularyLoader<C, B>>)>,
 }
@@ -114,6 +115,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let host_words = Rc::new(RefCell::new(WordList::new()));
         let mut files = Interns::new(1);
         files.set(0, File::Input(options.stdin));
+        files.set(1, File::Output(options.stdout));
         let mut vm = Vm {
             parameters: Parameters {
                 sp0: sp0,
@@ -171,10 +173,11 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         while self.ip != C::zero() {
             let xt = self.code_cell(self.ip);
             println!(
-                "colon_interpreter: ip={:?} xt={:?} stack={:?}",
+                "colon_interpreter: ip={:?} xt={:?} stack={:?} rstack={:?}",
                 self.ip,
                 xt,
-                self.stack_contents()
+                self.stack_contents(),
+                self.rstack_contents(),
             );
             self.ip = self.ip + C::one();
             self.execute_xt(xt)?;
@@ -292,15 +295,23 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                         let cell_offset = cell_idx * size_of::<C>();
                         let mut value = C::zero();
                         for i in 0..size_of::<C>() {
-                            value = value
-                                | C::from_uint(
-                                    (bytes[cell_offset + i] as usize) << (size_of::<C>() - (i + 1)),
-                                );
+                            value =
+                                value | C::from_uint((bytes[cell_offset + i] as usize) << (8 * i));
                         }
                         self.code[dst + cell_idx] = value;
                     }
-                    let n_cells = if len - (n_complete_cells * size_of::<C>()) != 0 {
-                        self.code[dst + n_complete_cells] = C::zero(); // FIXME
+                    let n_bytes_left = len - (n_complete_cells * size_of::<C>());
+                    let n_cells = if n_bytes_left != 0 {
+                        let mut value = C::zero();
+                        // FIXME: code duplication
+                        for i in 0..n_bytes_left {
+                            value = value
+                                | C::from_uint(
+                                    (bytes[n_complete_cells * size_of::<C>() + i] as usize)
+                                        << (8 * i),
+                                );
+                        }
+                        self.code[dst + n_complete_cells] = value;
                         n_complete_cells + 1
                     } else {
                         n_complete_cells
@@ -399,6 +410,10 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         n1 | (n2 << 16)
     }
 
+    pub fn rstack_len(&self) -> C {
+        (self.parameters.rp0 - self.rsp) / C::size()
+    }
+
     fn stack_rset<O: Into<C>>(&mut self, offset: O, value: C) {
         let address = self.sp + offset.into() * C::size();
         self.ram_cell_set(address, value)
@@ -412,7 +427,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     pub fn stack_contents(&self) -> Vec<C> {
         let len = self.stack_len().into();
         let mut contents = Vec::with_capacity(len.into());
-        for i in 0..len {
+        for i in (0..len).rev() {
             let offset: C = NumCast::from(i).unwrap();
             contents.push(self.stack_rget(offset));
         }
@@ -445,6 +460,16 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.rsp = self.rsp + count * C::size();
     }
 
+    pub fn rstack_contents(&self) -> Vec<C> {
+        let len = self.rstack_len().into();
+        let mut contents = Vec::with_capacity(len.into());
+        for i in (0..len).rev() {
+            let offset: C = NumCast::from(i).unwrap();
+            contents.push(self.rstack_rget(offset));
+        }
+        contents
+    }
+
     fn ram_cell_set<T: Into<C>>(&mut self, address: T, value: C) {
         let address = address.into().into();
         value.write::<B>(&mut self.ram[address..]);
@@ -468,12 +493,27 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.files
             .get_mut(0)
             .ok_or_else(|| VmError::forth_error(37))
-            .and_then(|f| match f {
-                File::Input(ref mut input) => Ok(input.read(&mut buf)?),
-                File::Output(_) => Err(VmError::forth_error(37)),
-                File::Fs(ref mut file) => Ok(file.read(&mut buf)?),
-            })
+            .and_then(|f| Ok(f.read(&mut buf)?))
             .map(|n_read| if n_read == 0 { None } else { Some(buf[0]) })
+    }
+
+    pub fn stdout_emit(&mut self, data: u8) -> Result<(), VmError> {
+        self.files
+            .get_mut(1)
+            .ok_or_else(|| VmError::forth_error(37))
+            .and_then(|f| {
+                let buf = [data; 1];
+                f.write(&buf)?;
+                f.flush()?;
+                Ok(())
+            })?;
+        Ok(())
+    }
+
+    pub fn stdout(&mut self) -> Result<&mut File, VmError> {
+        self.files
+            .get_mut(1)
+            .ok_or_else(|| VmError::forth_error(37))
     }
 
     pub fn intern_file(&mut self, file: fs::File) -> C {
@@ -591,8 +631,44 @@ impl<C: Cell, V> Interns<C, V> {
     }
 }
 
-enum File {
+pub enum File {
     Input(Box<dyn io::Read>),
     Output(Box<dyn io::Write>),
     Fs(fs::File),
+}
+
+impl io::Read for File {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match *self {
+            File::Input(ref mut input) => input.read(buf),
+            File::Output(_) => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "attempt to read from output",
+            )),
+            File::Fs(ref mut file) => file.read(buf),
+        }
+    }
+}
+
+impl io::Write for File {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match *self {
+            File::Input(_) => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "attempt to write to input",
+            )),
+            File::Output(ref mut output) => output.write(buf),
+            File::Fs(ref mut file) => file.write(buf),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        match *self {
+            File::Input(_) => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "attempt to flush input",
+            )),
+            File::Output(ref mut output) => output.flush(),
+            File::Fs(ref mut file) => file.flush(),
+        }
+    }
 }

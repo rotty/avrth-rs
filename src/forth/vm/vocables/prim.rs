@@ -355,7 +355,7 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
 }
 
 fn run_loop<C: Cell, B: ByteOrder>(vm: &mut Vm<C, B>, n: C) {
-    let limit = vm.stack_rget(1);
+    let limit = vm.rstack_rget(1);
     let ip = vm.ip;
     if limit == n {
         vm.rstack_drop_n(C::from_int(3));
@@ -397,5 +397,11 @@ mod tests {
             run_test(&v, &[u16::from_int(-42), 0], "<").unwrap(),
             vec![u16::from_bool(true)]
         );
+    }
+
+    #[test]
+    fn swap() {
+        let v: Vec<VocabularyLoader<u16, LittleEndian>> = vec![vocables::prim::load];
+        assert_eq!(run_test(&v, &[1, 2], "swap").unwrap(), vec![2, 1]);
     }
 }
