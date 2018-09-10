@@ -7,5 +7,8 @@ extern crate num_traits;
 #[macro_use]
 extern crate quickcheck;
 
+#[macro_use]
+extern crate log;
+
 pub mod forth;
 pub mod target;

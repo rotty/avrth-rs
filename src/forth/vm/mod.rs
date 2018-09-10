@@ -166,13 +166,13 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     }
 
     fn colon_interpreter(&mut self, xt: C) -> Result<(), VmError> {
-        println!("colon_interpreter: ip={:?} xt={:?}", self.ip, xt);
+        trace!("colon_interpreter: ip={:?} xt={:?}", self.ip, xt);
         let ip = self.ip;
         self.rstack_push(ip);
         self.ip = Self::xt_to_pfa(xt);
         while self.ip != C::zero() {
             let xt = self.code_cell(self.ip);
-            println!(
+            trace!(
                 "colon_interpreter: ip={:?} xt={:?} stack={:?} rstack={:?}",
                 self.ip,
                 xt,
@@ -192,7 +192,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
 
     fn compile_vocabulary(&mut self, vocabulary: &Vocabulary<C, B>) -> Result<(), VmError> {
         for (name, vocable) in vocabulary.iter() {
-            println!(
+            trace!(
                 "compile: {} dp={:?}, vocable={:?}",
                 name,
                 self.dp(),
@@ -263,7 +263,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                         let word = self.word(name)?;
                         (word.immediate, word.xt)
                     };
-                    println!(
+                    trace!(
                         "token={:?}, immediate={:?} state={:?}",
                         token, immediate, state
                     );
@@ -560,7 +560,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
 
     fn code_push(&mut self, code: C) {
         let dp = self.dp();
-        println!("code_push: {:?} {:?}", dp, code);
+        trace!("code_push: {:?} {:?}", dp, code);
         self.code[dp.into()] = code;
         self.set_dp(dp + C::one());
     }
