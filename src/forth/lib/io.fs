@@ -3,6 +3,7 @@
 : cr 10 emit ;
 : space bl emit ;
 
+\ FIXME: specific to 16-bit cell size
 : itype ( c-addr n -- )
     dup 2/ swap over 2* - >r
     0 ?do
@@ -11,6 +12,12 @@
     r> 0> if
         dup i@ emit
     then drop
+;
+
+: type ( c-addr n -- )
+  0 ?do
+    dup i + c@ emit
+  loop drop
 ;
 
 : tibsize 128 ;
@@ -38,7 +45,7 @@
 : /key ;
 
 : accept ( addr n1 -- n2 )
-  0 eof !
+    0 eof !
     swap over 0 ?do ( n1 addr -- )
         key dup 10 = over 13 = or if \ '\n' or '\r'
             drop nip i swap leave
@@ -57,7 +64,7 @@
             1+ 1
         then
     +loop
-        drop /key cr
+    drop /key cr
 ;
 
 : refill ( -- f )

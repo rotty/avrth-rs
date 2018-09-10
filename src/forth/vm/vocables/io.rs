@@ -40,16 +40,20 @@ mod tests {
 
     use byteorder::LittleEndian;
 
-    #[test]
-    fn load() {
-        let v: Vec<VocabularyLoader<u16, LittleEndian>> = vec![
+    fn vocables() -> Vec<VocabularyLoader<u16, LittleEndian>> {
+        vec![
             vocables::prim::load,
             vocables::compiler::load,
             vocables::derived::load,
             vocables::compiler_high::load,
             vocables::store::load,
             vocables::io::load,
-        ];
+        ]
+    }
+
+    #[test]
+    fn test_itype() {
+        let v = vocables();
         assert_eq!(
             run_io_test(&v, &[], "", r#"s" Hello World!" itype"#).unwrap(),
             (vec![], "Hello World!".to_string())
@@ -57,6 +61,44 @@ mod tests {
         assert_eq!(
             run_io_test(&v, &[], "", r#"s" Hello" itype"#).unwrap(),
             (vec![], "Hello".to_string())
+        );
+    }
+
+    #[test]
+    fn test_hash_tib() {
+        let v = vocables();
+        assert_eq!(
+            run_io_test(&v, &[], "", "#tib @ 42 #tib ! #tib @").unwrap(),
+            (vec![0, 42], "".to_string())
+        );
+    }
+
+    #[test]
+    fn test_key() {
+        let v = vocables();
+        let mut expected: Vec<_> = "hi!\n".chars().map(|c| c as u16).collect();
+        expected.push(u16::max_value()); // EOF
+        assert_eq!(
+            run_io_test(&v, &[], "hi!\n", "key key key key key").unwrap(),
+            (expected, "".to_string())
+        );
+    }
+
+    #[test]
+    fn test_accept() {
+        let v = vocables();
+        assert_eq!(
+            run_io_test(&v, &[], "hello\n", "tib tibsize accept tib swap type").unwrap(),
+            (vec![], "hello".to_string())
+        );
+    }
+
+    #[test]
+    fn test_refill() {
+        let v = vocables();
+        assert_eq!(
+            run_io_test(&v, &[], "", "refill drop source type").unwrap(),
+            (vec![], "hello\nhello".to_string())
         );
     }
 }

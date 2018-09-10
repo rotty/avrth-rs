@@ -90,7 +90,7 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             comparator!(vm, lt, C::to_int)
         }
         fn run_eq(vm, "=") {
-            comparator!(vm, lt, id)
+            comparator!(vm, eq, id)
         }
         fn run_neq(vm, "<>") {
             comparator!(vm, ne, id)
@@ -380,6 +380,7 @@ mod tests {
         assert_eq!(run_test(&v, &[1, 2], "+").unwrap(), vec![3]);
         assert_eq!(run_test(&v, &[u16::max_value(), 10], "+").unwrap(), vec![9]);
         assert_eq!(run_test(&v, &[1, 2], "-").unwrap(), vec![u16::from_int(-1)]);
+        assert_eq!(run_test(&v, &[4], "1+").unwrap(), vec![5]);
     }
 
     #[test]
@@ -395,6 +396,14 @@ mod tests {
         );
         assert_eq!(
             run_test(&v, &[u16::from_int(-42), 0], "<").unwrap(),
+            vec![u16::from_bool(true)]
+        );
+        assert_eq!(
+            run_test(&v, &[u16::from_int(-42), 0], "=").unwrap(),
+            vec![u16::from_bool(false)]
+        );
+        assert_eq!(
+            run_test(&v, &[42, 42], "=").unwrap(),
             vec![u16::from_bool(true)]
         );
     }
