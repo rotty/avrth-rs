@@ -28,6 +28,11 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
             write!(vm.stdout()?, "{}", u)?;
             Ok(())
         }
+        fn run_dot_s(vm, ".s") {
+            let stack = vm.stack_contents();
+            write!(vm.stdout()?, "{:?}", stack)?;
+            Ok(())
+        }
     }
     v.load_forth_words(arena, &["forth", "lib", "io.fs"])?;
     Ok(v)
@@ -84,12 +89,14 @@ mod tests {
         );
     }
 
+    // TODO: note that these do include input echo from `accept`
+
     #[test]
     fn test_accept() {
         let v = vocables();
         assert_eq!(
             run_io_test(&v, &[], "hello\n", "tib tibsize accept tib swap type").unwrap(),
-            (vec![], "hello".to_string())
+            (vec![], "hello\nhello".to_string())
         );
     }
 
@@ -97,7 +104,7 @@ mod tests {
     fn test_refill() {
         let v = vocables();
         assert_eq!(
-            run_io_test(&v, &[], "", "refill drop source type").unwrap(),
+            run_io_test(&v, &[], "hello\n", "refill drop source type").unwrap(),
             (vec![], "hello\nhello".to_string())
         );
     }

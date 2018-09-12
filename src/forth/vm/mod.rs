@@ -5,6 +5,7 @@ use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::rc::Rc;
+use std::str;
 
 use byteorder::ByteOrder;
 use failure::Error;
@@ -265,7 +266,9 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                     };
                     trace!(
                         "token={:?}, immediate={:?} state={:?}",
-                        token, immediate, state
+                        token,
+                        immediate,
+                        state
                     );
                     if immediate || state == State::Interpret {
                         self.execute_xt(xt)?;
@@ -404,10 +407,25 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.stack_push(C::from_uint(value & 0xFFFF));
         self.stack_push(C::from_uint(value >> 16));
     }
+
     pub fn stack_dpop(&mut self) -> usize {
         let n2 = self.stack_pop().unwrap().into();
         let n1 = self.stack_pop().unwrap().into();
         n1 | (n2 << 16)
+    }
+
+    pub fn stack_pop_byteslice(&mut self) -> &[u8] {
+        let u: usize = self.stack_pop().unwrap().into();
+        let addr: usize = self.stack_pop().unwrap().into();
+        &self.ram[addr..addr + u]
+    }
+
+    pub fn stack_pop_strslice(&mut self) -> &str {
+        str::from_utf8(self.stack_pop_byteslice()).unwrap()
+    }
+
+    pub fn stack_pop_string(&mut self) -> String {
+        String::from(self.stack_pop_strslice())
     }
 
     pub fn rstack_len(&self) -> C {
@@ -589,6 +607,13 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
 
     fn xt_to_pfa(xt: C) -> C {
         xt + C::one()
+    }
+
+    pub fn create(&mut self, name: &str) {
+        let xt = self.dp();
+        self.words_mut().define(name, xt, false, false);
+        self.current_word_name = Some(name.into());
+        // TODO define target symbol
     }
 }
 

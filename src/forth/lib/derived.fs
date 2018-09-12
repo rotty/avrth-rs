@@ -30,6 +30,12 @@
 ;
 
 \
+\ Memory
+\
+: cells 2* ;
+: cell 2 ;
+
+\
 \ Stack manipulation
 \
 : 2swap

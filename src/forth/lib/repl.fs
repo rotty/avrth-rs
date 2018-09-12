@@ -10,7 +10,7 @@
     - r> + dup 0 r> within
 ;
 
-: count ( n -- n1 c )
+: count ( c-addr1 -- c-addr2 u )
     dup 1+ swap c@
 ;
 
@@ -106,7 +106,7 @@
     >r source >in @ /string r> cscan dup 1+ >in +!
 ;
 
-: parse-word
+: parse-word ( char -- c-addr u )
     >r source >in @ /string swap over r@
     cskip rot over - >in +! r> cscan dup 1+
     >in +!
@@ -114,12 +114,6 @@
 
 : parse-name ( "name" -- c-addr u )
     bl parse-word
-;
-
-: word
-    parse-word here place
-    0 here dup c@ + 1+ c! \ zero-terminate
-    here
 ;
 
 : '
@@ -130,6 +124,60 @@
 
 : [']
   ['] (literal) i, ' i,
+; immediate
+
+: word
+    parse-word here place
+    0 here dup c@ + 1+ c! \ zero-terminate
+    here
+;
+
+: (create:)
+    parse-name (create) ['] (:) i,
+;
+
+: create
+    (create:) ['] (literal) i, here i, ['] exit i,
+;
+
+: icreate
+    (create:) ['] (literal) i, dp 2 + i, ['] exit i,
+;
+
+: variable
+    (create:) ['] (literal) i, here i,
+    cell allot ['] exit i,
+;
+
+: constant
+    (create:) ['] (literal) i, i, ['] exit i,
+;
+
+: 2constant
+    (create:) swap
+    ['] (literal) i, i,
+    ['] (literal) i, i,
+    ['] exit i,
+;
+
+: [
+    0 state !
+; immediate
+
+: ]
+    1 state !
+;
+
+: : ( -- )
+    (create:) 1 state !
+;
+
+: ; ( -- )
+    ['] exit i, 0 state !
+; immediate
+
+: (
+    41 word drop
 ; immediate
 
 
