@@ -1,5 +1,5 @@
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque, BTreeMap};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::marker::PhantomData;
@@ -376,6 +376,10 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
 
     fn set_current_word_xt(&mut self, xt: C) {
         unimplemented!()
+    }
+
+    fn word_map(&self) -> BTreeMap<C, String> {
+        self.words().iter().map(|(name, w)| (w.xt, name.clone())).collect()
     }
 
     fn set_dp(&mut self, address: C) {

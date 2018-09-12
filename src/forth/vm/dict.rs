@@ -1,5 +1,5 @@
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
 use std::rc::Rc;
 
 use super::Cell;
@@ -35,6 +35,10 @@ impl<C> WordList<C> {
 
     pub fn get_mut(&mut self, name: &str) -> Option<&mut Word<C>> {
         self.0.get_mut(name)
+    }
+
+    pub fn iter(&self) -> hash_map::Iter<String, Word<C>> {
+        self.0.iter()
     }
 }
 
