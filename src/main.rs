@@ -1,6 +1,7 @@
 extern crate avrth;
 
 extern crate byteorder;
+extern crate env_logger;
 extern crate failure;
 #[macro_use]
 extern crate structopt;
@@ -130,6 +131,8 @@ where
 }
 
 fn main() -> Result<(), Error> {
+    env_logger::init();
+
     match Avrth::from_args().command {
         Some(Command::Compile { output, files }) => {
             compile_program(file_or_stdout(output)?, &files)
