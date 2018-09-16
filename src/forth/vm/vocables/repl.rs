@@ -52,10 +52,10 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
             let do_dodoes_pfa = vm.word_xt("((does>))").expect("word `((does>))' not defined");
             let pfa = vm.code_cell(xt);
             let words = vm.word_map();
-            if let Some(word) = words.get(&xt) {
+            if let Some(_word) = words.get(&xt) {
                 let next_xt = words.range((Excluded(xt), Unbounded)).map(|(xt, _)| *xt).next().unwrap_or(vm.dp());
                 if pfa == do_colon_pfa || pfa == do_dodoes_pfa {
-                    fmt_decompiled(io::stdout(), vm, &words, xt + C::one(), next_xt);
+                    fmt_decompiled(io::stdout(), vm, &words, xt + C::one(), next_xt)?;
                 } else {
                     println!("cannot decompile primitive, sorry");
                 }

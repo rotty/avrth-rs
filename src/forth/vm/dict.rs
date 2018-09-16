@@ -43,7 +43,9 @@ impl<C> WordList<C> {
 }
 
 pub struct Dict<C: Cell> {
+    #[allow(dead_code)]
     start: C,
+    #[allow(dead_code)]
     here_start: C,
     word_lists: Vec<Rc<RefCell<WordList<C>>>>,
     immediate_word_lists: Vec<Rc<RefCell<WordList<C>>>>,
