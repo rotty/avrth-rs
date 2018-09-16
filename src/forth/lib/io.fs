@@ -3,15 +3,16 @@
 : cr 10 emit ;
 : space bl emit ;
 
-\ FIXME: specific to 16-bit cell size
-: itype ( c-addr n -- )
-    dup 2/ swap over 2* - >r
-    0 ?do
-        dup i@ dup emit 8 rshift emit 1+
+: itype ( i-addr n -- )
+    0 swap ( i-addr 0 n )
+    0 ?do ( i-addr acc )
+        [ cell 1- ] literal i and 0= if
+            drop dup 1+ swap i@ ( i-addr' acc')
+        then
+        dup emit
+        8 rshift
     loop
-    r> 0> if
-        dup i@ emit
-    then drop
+    2drop
 ;
 
 : type ( c-addr n -- )

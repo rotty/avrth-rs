@@ -32,8 +32,8 @@
 \
 \ Memory
 \
-: cells 2* ;
-: cell 2 ;
+: cells 2* ; \ FIXME: assumes 16 bit cells
+: cell 2 ; \ likewise
 
 \
 \ Stack manipulation

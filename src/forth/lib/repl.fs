@@ -180,6 +180,33 @@
     41 word drop
 ; immediate
 
+( c-addr u -- )
+: s,
+    dup i,
+    dup dup cell / ( c-addr len len cells )
+    cells - ( c-addr len rem )
+    >r
+    0 swap 0 ?do ( c-addr acc )
+        over i + c@ ( c-addr acc c )
+        [ cell 1- ] literal dup i and ( c-addr acc c mask i' )
+        rot swap ( c-addr acc mask c i' )
+        8 * lshift ( c-addr acc mask c' )
+        rot or ( c-addr mask acc' )
+        swap dup i and = if
+            i, 0
+        then
+    loop
+    r> 0> if i, else drop then
+    drop
+;
+
+: s"
+    34 parse-word \ ASCII '"'
+    state @ if
+        ['] (sliteral) i, s,
+    then
+; immediate
+
 
 \
 \ The "REPL"

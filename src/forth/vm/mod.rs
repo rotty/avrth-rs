@@ -293,31 +293,25 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                     let bytes = s.as_bytes();
                     self.code_push(C::from_uint(len));
                     let dst = self.dp().into();
-                    let n_complete_cells = len / size_of::<C>();
-                    for cell_idx in 0..n_complete_cells {
-                        let cell_offset = cell_idx * size_of::<C>();
-                        let mut value = C::zero();
-                        for i in 0..size_of::<C>() {
-                            value =
-                                value | C::from_uint((bytes[cell_offset + i] as usize) << (8 * i));
+                    let mut acc = 0;
+                    let cell_mask = size_of::<C>() - 1;
+                    let mut cell_addr = dst;
+                    for idx in 0..len {
+                        let masked_idx = idx & cell_mask;
+                        acc = acc | ((bytes[idx] as usize) << (8 * masked_idx));
+                        if masked_idx == cell_mask {
+                            self.code[cell_addr] = C::from_uint(acc);
+                            cell_addr += 1;
+                            acc = 0;
                         }
-                        self.code[dst + cell_idx] = value;
                     }
-                    let n_bytes_left = len - (n_complete_cells * size_of::<C>());
-                    let n_cells = if n_bytes_left != 0 {
-                        let mut value = C::zero();
-                        // FIXME: code duplication
-                        for i in 0..n_bytes_left {
-                            value = value | C::from_uint(
-                                (bytes[n_complete_cells * size_of::<C>() + i] as usize) << (8 * i),
-                            );
-                        }
-                        self.code[dst + n_complete_cells] = value;
-                        n_complete_cells + 1
-                    } else {
-                        n_complete_cells
-                    };
-                    self.set_dp(C::from_uint(dst + n_cells));
+                    let n_complete_cells = len / size_of::<C>();
+                    let remainder = len - (n_complete_cells * size_of::<C>());
+                    if remainder > 0 {
+                        self.code[cell_addr] = C::from_uint(acc);
+                        cell_addr += 1;
+                    }
+                    self.set_dp(C::from_uint(cell_addr));
                 }
                 Token::Comment(_) => {}
             }

@@ -53,6 +53,9 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         fn run_and(vm, "and") {
             binop!(vm, bitand, id)
         }
+        fn run_lshift(vm, "lshift") {
+            binop!(vm, shl, (C::to_uint))
+        }
 
         fn run_one_plus(vm, "1+") {
             // FIXME: unwrap
