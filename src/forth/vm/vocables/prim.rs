@@ -212,6 +212,22 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             vm.stack_push(w);
             Ok(())
         }
+        fn run_2_to_r(vm, "2>r") {
+            // FIXME: unwrap
+            let w2 = vm.stack_pop().unwrap();
+            let w1 = vm.stack_pop().unwrap();
+            vm.rstack_push(w1);
+            vm.rstack_push(w2);
+            Ok(())
+        }
+        fn run_2_r_from(vm, "2r>") {
+            // FIXME: unwrap
+            let w2 = vm.rstack_pop().unwrap();
+            let w1 = vm.rstack_pop().unwrap();
+            vm.stack_push(w1);
+            vm.stack_push(w2);
+            Ok(())
+        }
 
         // VM register manipulation
         fn run_sp_store(vm, "sp!") {
