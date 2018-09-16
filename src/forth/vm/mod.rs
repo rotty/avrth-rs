@@ -63,6 +63,7 @@ pub struct Options<C: Cell, B: ByteOrder> {
     pub host_code_size: usize,
     pub stdin: Box<dyn io::Read>,
     pub stdout: Box<dyn io::Write>,
+    pub stderr: Box<dyn io::Write>,
     pub target: Box<dyn Target<C>>,
     pub layout: Vec<(Dictionary, Vec<VocabularyLoader<C, B>>)>,
 }
@@ -117,6 +118,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let mut files = Interns::new(1);
         files.set(0, File::Input(options.stdin));
         files.set(1, File::Output(options.stdout));
+        files.set(2, File::Output(options.stderr));
         let mut vm = Vm {
             parameters: Parameters {
                 sp0: sp0,

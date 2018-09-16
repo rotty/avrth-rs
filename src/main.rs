@@ -46,10 +46,11 @@ enum Command {
     },
 }
 
-fn make_standard_vm<R, W>(stdin: R, stdout: W) -> Result<Vm<u16, LittleEndian>, Error>
+fn make_standard_vm<R, W, E>(stdin: R, stdout: W, stderr: E) -> Result<Vm<u16, LittleEndian>, Error>
 where
     R: io::Read + 'static,
     W: io::Write + 'static,
+    E: io::Write + 'static,
 {
     Vm::<u16, LittleEndian>::new(vm::Options {
         ram_size: 2048,
@@ -61,6 +62,7 @@ where
         host_code_size: 32 * 1024,
         stdin: Box::new(stdin),
         stdout: Box::new(stdout),
+        stderr: Box::new(stderr),
         target: Box::new(ShimTarget::new()),
         layout: vec![(
             vm::Dictionary::Host,
@@ -82,7 +84,7 @@ fn compile_program<O: io::Write, I: IntoIterator>(_output: O, input_files: I) ->
 where
     I::Item: AsRef<Path>,
 {
-    let mut vm = make_standard_vm(io::stdin(), io::stdout())?;
+    let mut vm = make_standard_vm(io::stdin(), io::stdout(), io::stderr())?;
     vm.set_dictionary(vm::Dictionary::Target);
     for path in input_files.into_iter() {
         let file = vm.intern_file(File::open(path.as_ref())?);
@@ -94,7 +96,7 @@ where
 }
 
 fn run_repl() -> Result<(), Error> {
-    let mut vm = make_standard_vm(io::stdin(), io::stdout())?;
+    let mut vm = make_standard_vm(io::stdin(), io::stdout(), io::stderr())?;
     loop {
         // FIXME: deal with EOF, unexpected errors
         match vm.run("quit") {
@@ -112,7 +114,7 @@ fn run_repl() -> Result<(), Error> {
 }
 
 fn run_program(file: &Path) -> Result<(), Error> {
-    let mut vm = make_standard_vm(File::open(file)?, io::stdout())?;
+    let mut vm = make_standard_vm(File::open(file)?, io::stdout(), io::stderr())?;
     Ok(vm.run("quit")?)
 }
 

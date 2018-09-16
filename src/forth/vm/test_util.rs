@@ -41,6 +41,7 @@ fn make_vm<C: Cell, B: ByteOrder>(
     vocabularies: Vec<VocabularyLoader<C, B>>,
     stdin: &str,
     stdout: RefCursor,
+    stderr: RefCursor,
 ) -> Result<Vm<C, B>, Error> {
     Vm::<C, B>::new(Options {
         ram_size: 2048,
@@ -52,6 +53,7 @@ fn make_vm<C: Cell, B: ByteOrder>(
         host_code_size: 32 * 1024,
         stdin: Box::new(Cursor::new(stdin.as_bytes().to_owned())),
         stdout: Box::new(stdout),
+        stderr: Box::new(stderr),
         target: Box::new(ShimTarget::new()),
         layout: vec![(Dictionary::Host, vocabularies)],
     })
@@ -65,7 +67,8 @@ pub fn run_io_test<C: Cell, B: ByteOrder>(
 ) -> Result<(Vec<C>, String), Error> {
     let tokens: Vec<_> = Reader::new(code).tokens().collect();
     let stdout = RefCursor::new();
-    let mut vm = make_vm(vocabularies.to_vec(), input, stdout.clone())?;
+    let stderr = RefCursor::new();
+    let mut vm = make_vm(vocabularies.to_vec(), input, stdout.clone(), stderr.clone())?;
     let test_vocabulary = {
         let mut v = Vocabulary::new();
         v.define_forth_word("test", false, tokens);
