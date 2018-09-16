@@ -15,6 +15,7 @@ pub mod compiler;
 pub mod compiler_high;
 pub mod control;
 pub mod derived;
+pub mod file;
 pub mod io;
 pub mod prim;
 pub mod repl;

@@ -248,3 +248,11 @@
           then
   repeat
 ;
+
+
+\
+\ Development tools
+\
+: see ( "name" -- )
+    ' xt-see
+;

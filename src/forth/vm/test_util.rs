@@ -55,6 +55,7 @@ fn make_vm<C: Cell, B: ByteOrder>(
         stdout: Box::new(stdout),
         stderr: Box::new(stderr),
         target: Box::new(ShimTarget::new()),
+        fpath: vec![],
         layout: vec![(Dictionary::Host, vocabularies)],
     })
 }

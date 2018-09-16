@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
+use std::path::Path;
 use std::rc::Rc;
 use std::str;
 
@@ -55,6 +56,10 @@ pub struct Vm<C: Cell, B: ByteOrder> {
     rsp: C,
     ip: C,
     files: Interns<C, File>,
+    string_tables: Interns<C, HashMap<String, C>>,
+    paths: Interns<C, Vec<Box<Path>>>,
+    source_stack: Vec<(C, Vec<u8>, C)>,
+    current_source: C,
     do_colon_address: C,
     _byteorder: PhantomData<B>,
 }
@@ -72,12 +77,14 @@ pub struct Options<C: Cell, B: ByteOrder> {
     pub stdout: Box<dyn io::Write>,
     pub stderr: Box<dyn io::Write>,
     pub target: Box<dyn Target<C>>,
+    pub fpath: Vec<Box<Path>>,
     pub layout: Vec<(Dictionary, Vec<VocabularyLoader<C, B>>)>,
 }
 
 pub struct Parameters<C> {
     pub sp0: C,
     pub rp0: C,
+    pub fpath: C,
 }
 
 #[derive(Fail, Debug)]
@@ -122,14 +129,17 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         code.resize(options.flash_size + options.host_code_size, C::zero());
         let target_words = Rc::new(RefCell::new(WordList::new()));
         let host_words = Rc::new(RefCell::new(WordList::new()));
-        let mut files = Interns::new(1);
+        let mut files = Interns::new(3);
         files.set(0, File::Input(options.stdin));
         files.set(1, File::Output(options.stdout));
         files.set(2, File::Output(options.stderr));
+        let mut paths = Interns::new(0);
+        let fpath = paths.add(options.fpath);
         let mut vm = Vm {
             parameters: Parameters {
                 sp0: sp0,
                 rp0: rsp0,
+                fpath: fpath,
             },
             current_dictionary: Dictionary::Target,
             current_word_name: None,
@@ -151,6 +161,10 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
             ram: ram,
             code: code,
             files: files,
+            string_tables: Interns::new(0),
+            paths: paths,
+            source_stack: vec![],
+            current_source: C::zero(),
             sp: sp0,
             rsp: rsp0,
             ip: C::zero(),               // zero is the trap address
@@ -539,6 +553,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         match name {
             "sp0" => Some(self.parameters.sp0),
             "rp0" => Some(self.parameters.rp0),
+            "fpath" => Some(self.parameters.fpath),
             _ => None,
         }
     }
@@ -546,22 +561,19 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     pub fn stdin_key(&mut self) -> Result<Option<u8>, VmError> {
         let mut buf = [0; 1];
         self.files
-            .get_mut(0)
+            .get_mut(self.current_source)
             .ok_or_else(|| VmError::forth_error(37))
             .and_then(|f| Ok(f.read(&mut buf)?))
             .map(|n_read| if n_read == 0 { None } else { Some(buf[0]) })
     }
 
     pub fn stdout_emit(&mut self, data: u8) -> Result<(), VmError> {
-        self.files
-            .get_mut(1)
-            .ok_or_else(|| VmError::forth_error(37))
-            .and_then(|f| {
-                let buf = [data; 1];
-                f.write(&buf)?;
-                f.flush()?;
-                Ok(())
-            })?;
+        self.stdout().and_then(|f| {
+            let buf = [data; 1];
+            f.write(&buf)?;
+            f.flush()?;
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -573,6 +585,18 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
 
     pub fn intern_file(&mut self, file: fs::File) -> C {
         self.files.add(File::Fs(file))
+    }
+
+    pub fn intern_string_table(&mut self, table: HashMap<String, C>) -> C {
+        self.string_tables.add(table)
+    }
+
+    pub fn source_push(&mut self, source_id: C, buffer: Vec<u8>, buffer_pos: C) {
+        self.source_stack.push((source_id, buffer, buffer_pos));
+    }
+
+    pub fn source_pop(&mut self) -> (C, Vec<u8>, C) {
+        self.source_stack.pop().unwrap()
     }
 
     fn host_xt(&self, name: &str) -> Result<C, VmError> {
@@ -682,6 +706,10 @@ impl<C: Cell, V> Interns<C, V> {
 
     fn get_mut<T: Into<C>>(&mut self, id: T) -> Option<&mut V> {
         self.table.get_mut(&id.into())
+    }
+
+    fn remove<T: Into<C>>(&mut self, id: T) -> Option<V> {
+        self.table.remove(&id.into())
     }
 }
 

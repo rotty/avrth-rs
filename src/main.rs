@@ -22,6 +22,8 @@ use avrth::target::shim::ShimTarget;
 struct Avrth {
     #[structopt(subcommand)]
     command: Option<Command>,
+    #[structopt(short = "L", parse(from_os_str))]
+    fpath: Vec<PathBuf>,
 }
 
 #[derive(StructOpt, Debug)]
@@ -46,7 +48,12 @@ enum Command {
     },
 }
 
-fn make_standard_vm<R, W, E>(stdin: R, stdout: W, stderr: E) -> Result<Vm<u16, LittleEndian>, Error>
+fn make_standard_vm<R, W, E>(
+    stdin: R,
+    stdout: W,
+    stderr: E,
+    fpath: Vec<Box<Path>>,
+) -> Result<Vm<u16, LittleEndian>, Error>
 where
     R: io::Read + 'static,
     W: io::Write + 'static,
@@ -64,6 +71,7 @@ where
         stdout: Box::new(stdout),
         stderr: Box::new(stderr),
         target: Box::new(ShimTarget::new()),
+        fpath: fpath,
         layout: vec![(
             vm::Dictionary::Host,
             vec![
@@ -75,16 +83,24 @@ where
                 vocables::control::load,
                 vocables::io::load,
                 vocables::repl::load,
+                vocables::file::load,
             ],
         )],
     })
 }
 
-fn compile_program<O: io::Write, I: IntoIterator>(_output: O, input_files: I) -> Result<(), Error>
+fn compile_program<O, I>(_output: O, input_files: I, fpath: Vec<PathBuf>) -> Result<(), Error>
 where
+    O: io::Write,
+    I: IntoIterator,
     I::Item: AsRef<Path>,
 {
-    let mut vm = make_standard_vm(io::stdin(), io::stdout(), io::stderr())?;
+    let mut vm = make_standard_vm(
+        io::stdin(),
+        io::stdout(),
+        io::stderr(),
+        fpath.into_iter().map(|p| p.into_boxed_path()).collect(),
+    )?;
     vm.set_dictionary(vm::Dictionary::Target);
     for path in input_files.into_iter() {
         let file = vm.intern_file(File::open(path.as_ref())?);
@@ -95,8 +111,13 @@ where
     Ok(())
 }
 
-fn run_repl() -> Result<(), Error> {
-    let mut vm = make_standard_vm(io::stdin(), io::stdout(), io::stderr())?;
+fn run_repl(fpath: Vec<PathBuf>) -> Result<(), Error> {
+    let mut vm = make_standard_vm(
+        io::stdin(),
+        io::stdout(),
+        io::stderr(),
+        fpath.into_iter().map(|p| p.into_boxed_path()).collect(),
+    )?;
     loop {
         // FIXME: deal with EOF, unexpected errors
         match vm.run("quit") {
@@ -113,8 +134,13 @@ fn run_repl() -> Result<(), Error> {
     Ok(())
 }
 
-fn run_program(file: &Path) -> Result<(), Error> {
-    let mut vm = make_standard_vm(File::open(file)?, io::stdout(), io::stderr())?;
+fn run_program(file: &Path, fpath: Vec<PathBuf>) -> Result<(), Error> {
+    let mut vm = make_standard_vm(
+        File::open(file)?,
+        io::stdout(),
+        io::stderr(),
+        fpath.into_iter().map(|p| p.into_boxed_path()).collect(),
+    )?;
     Ok(vm.run("quit")?)
 }
 
@@ -135,14 +161,15 @@ where
 fn main() -> Result<(), Error> {
     env_logger::init();
 
-    match Avrth::from_args().command {
+    let avrth = Avrth::from_args();
+    match avrth.command {
         Some(Command::Compile { output, files }) => {
-            compile_program(file_or_stdout(output)?, &files)
+            compile_program(file_or_stdout(output)?, &files, avrth.fpath)
         }
         Some(Command::Tethered { tty }) => run_tethered(&tty),
-        Some(Command::Run { file }) => run_program(&file),
+        Some(Command::Run { file }) => run_program(&file, avrth.fpath),
         None => {
-            run_repl()?;
+            run_repl(avrth.fpath)?;
             Ok(())
         }
     }
