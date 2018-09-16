@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::str;
 use std::ops::Bound::{Excluded, Unbounded};
+use std::str;
 
 use byteorder::ByteOrder;
 use failure::Error;
@@ -69,7 +69,13 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
     Ok(v)
 }
 
-fn fmt_decompiled<C, B, W>(mut output: W, vm: &Vm<C, B>, words: &BTreeMap<C, String>, start: C, end: C) -> Result<(), io::Error>
+fn fmt_decompiled<C, B, W>(
+    mut output: W,
+    vm: &Vm<C, B>,
+    words: &BTreeMap<C, String>,
+    start: C,
+    end: C,
+) -> Result<(), io::Error>
 where
     C: Cell,
     B: ByteOrder,
@@ -82,7 +88,12 @@ where
     while address < end {
         let xt = vm.code_cell(C::from_uint(address));
         if xt == do_literal_xt {
-            write!(output, "{} {}\n", address, vm.code_cell(C::from_uint(address + 1)))?;
+            write!(
+                output,
+                "{} {}\n",
+                address,
+                vm.code_cell(C::from_uint(address + 1))
+            )?;
             address += 2;
         } else {
             if let Some(name) = words.get(&xt) {

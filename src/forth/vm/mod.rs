@@ -1,5 +1,5 @@
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::{HashMap, VecDeque, BTreeMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::marker::PhantomData;
@@ -308,11 +308,9 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                         let mut value = C::zero();
                         // FIXME: code duplication
                         for i in 0..n_bytes_left {
-                            value = value
-                                | C::from_uint(
-                                    (bytes[n_complete_cells * size_of::<C>() + i] as usize)
-                                        << (8 * i),
-                                );
+                            value = value | C::from_uint(
+                                (bytes[n_complete_cells * size_of::<C>() + i] as usize) << (8 * i),
+                            );
                         }
                         self.code[dst + n_complete_cells] = value;
                         n_complete_cells + 1
@@ -379,7 +377,10 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     }
 
     fn word_map(&self) -> BTreeMap<C, String> {
-        self.words().iter().map(|(name, w)| (w.xt, name.clone())).collect()
+        self.words()
+            .iter()
+            .map(|(name, w)| (w.xt, name.clone()))
+            .collect()
     }
 
     fn set_dp(&mut self, address: C) {

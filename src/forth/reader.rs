@@ -61,11 +61,7 @@ impl<'a> Reader<'a> {
                         Some(Token::Comment("")) // TODO: correct?
                     } else if let Some(eol) = self.input[self.pos..].find('\n') {
                         let end_pos = self.pos + eol;
-                        let start_pos = if eol == 0 {
-                            self.pos
-                        } else {
-                            self.pos + 1
-                        };
+                        let start_pos = if eol == 0 { self.pos } else { self.pos + 1 };
                         let comment = &self.input[start_pos..end_pos];
                         self.pos = end_pos + 1;
                         Some(Token::Comment(comment))
