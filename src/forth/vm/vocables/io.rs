@@ -16,22 +16,18 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
                 Some(key) => C::from_int(key as isize),
             };
             vm.stack_push(key);
-            Ok(())
         }
         fn run_emit(vm, "emit") {
             let code = vm.stack_pop().unwrap().to_int() as u8;
             vm.stdout_emit(code)?;
-            Ok(())
         }
         fn run_dot(vm, ".") {
             let u = vm.stack_pop().unwrap();
             write!(vm.stdout()?, "{}", u)?;
-            Ok(())
         }
         fn run_dot_s(vm, ".s") {
             let stack = vm.stack_contents();
             write!(vm.stdout()?, "{:?}", stack)?;
-            Ok(())
         }
     }
     v.load_forth_words(arena, &["forth", "lib", "io.fs"])?;
@@ -41,7 +37,7 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
 #[cfg(test)]
 mod tests {
     use forth::vm::test_util::run_io_test;
-    use forth::vm::{vocables, VocabularyLoader};
+    use forth::vm::{vocables, Cell, VocabularyLoader};
 
     use byteorder::LittleEndian;
 
@@ -106,6 +102,15 @@ mod tests {
         assert_eq!(
             run_io_test(&v, &[], "hello\n", "refill drop source type").unwrap(),
             (vec![], "hello\nhello".to_string())
+        );
+    }
+
+    #[test]
+    fn test_refill_eof() {
+        let v = vocables();
+        assert_eq!(
+            run_io_test(&v, &[], "", "refill").unwrap(),
+            (vec![u16::from_bool(false)], "\n".to_string())
         );
     }
 }

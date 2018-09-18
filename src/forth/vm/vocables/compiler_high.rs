@@ -12,12 +12,10 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
         fn run_set_current(vm, "set-current") {
             let xt = vm.stack_pop().unwrap();
             vm.set_current_word_xt(xt);
-            Ok(())
         }
         fn get_current(vm, "get-current") {
             let xt = vm.current_word().unwrap().xt;
             vm.stack_push(xt);
-            Ok(())
         }
     }
     v.load_forth_words(arena, &["forth", "lib", "compiler-high.fs"])?;

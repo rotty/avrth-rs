@@ -20,7 +20,6 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
         fn run_do_create(vm, "(create)") {
             let name = vm.stack_pop_string();
             vm.create(&name);
-            Ok(())
         }
 
         // ( c-addr u -- [ addr 0 ] | [ xt [-1|1]] )
@@ -40,7 +39,6 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
                 vm.stack_push(address);
                 vm.stack_push(C::zero());
             }
-            Ok(())
         }
 
         //
@@ -62,7 +60,6 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
             } else {
                 println!("unknown execution token {}", xt);
             }
-            Ok(())
         }
     }
     v.load_forth_words(arena, &["forth", "lib", "repl.fs"])?;
@@ -175,6 +172,25 @@ mod tests {
         assert_eq!(
             run_io_test(&v, &[], "42 3 +", "refill drop interpret").unwrap(),
             (vec![45], "42 3 +\n".to_string())
+        );
+    }
+
+    #[test]
+    fn test_catch() {
+        let v = vocables();
+        let input = ": foo 42 throw ; ' foo catch\n";
+        assert_eq!(
+            run_io_test(&v, &[], input, "refill drop interpret").unwrap(),
+            (vec![42], input.to_string())
+        );
+    }
+
+    #[test]
+    fn test_quit_eof() {
+        let v = vocables();
+        assert_eq!(
+            run_io_test(&v, &[], "", "quit").unwrap(),
+            (vec![], "\n> \n".into())
         );
     }
 }

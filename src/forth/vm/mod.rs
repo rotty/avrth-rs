@@ -30,7 +30,14 @@ pub enum Dictionary {
     Host,
 }
 
-type Interpreter<C, B> = fn(&mut Vm<C, B>, C) -> Result<(), VmError>;
+// FIXME: better name
+pub enum Prim<C> {
+    Continue,
+    Exit,
+    Execute(C),
+}
+
+type Primitive<C, B> = fn(&mut Vm<C, B>) -> Result<Prim<C>, VmError>;
 type VocabularyLoader<C, B> = fn(&mut SourceArena) -> Result<Vocabulary<C, B>, Error>;
 
 pub struct Vm<C: Cell, B: ByteOrder> {
@@ -40,7 +47,7 @@ pub struct Vm<C: Cell, B: ByteOrder> {
     immediate_mode: bool,
     host_dict: Dict<C>,
     target_dict: Dict<C>,
-    interpreters: HashMap<C, Interpreter<C, B>>,
+    primitives: HashMap<C, Primitive<C, B>>,
     target: Box<dyn Target<C>>,
     ram: Vec<u8>,
     code: Vec<C>,
@@ -139,7 +146,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                 &[host_words.clone(), target_words.clone()],
                 &[],
             ),
-            interpreters: HashMap::new(),
+            primitives: HashMap::new(),
             target: options.target,
             ram: ram,
             code: code,
@@ -154,7 +161,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let new_dp = vm.target.emit_startup_code(dp);
         vm.set_dp(new_dp);
         let colon_pfa = vm.target.symbol("DO_COLON").unwrap();
-        vm.register_interpreter(colon_pfa, Self::colon_interpreter);
+        //vm.register_interpreter(colon_pfa, Self::colon_interpreter);
         vm.words_mut().define("(:)", colon_pfa, false, false);
         vm.do_colon_address = colon_pfa;
         let mut source_arena = SourceArena::new();
@@ -168,24 +175,53 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         Ok(vm)
     }
 
-    fn colon_interpreter(&mut self, xt: C) -> Result<(), VmError> {
-        trace!("colon_interpreter: ip={:?} xt={:?}", self.ip, xt);
-        let ip = self.ip;
-        self.rstack_push(ip);
-        self.ip = Self::xt_to_pfa(xt);
-        while self.ip != C::zero() {
-            let xt = self.code_cell(self.ip);
+    fn execute_xt(&mut self, xt: C) -> Result<(), VmError> {
+        trace!("inner_interpreter enter: ip={:?} xt={:?}", self.ip, xt);
+        let mut xt = xt;
+        let start_ip = self.ip;
+        loop {
+            let code = self.code_cell(xt);
             trace!(
-                "colon_interpreter: ip={:?} xt={:?} stack={:?} rstack={:?}",
+                "inner_interpreter: ip={:?} xt={:?} code={:?} stack={:?} rstack={:?}",
                 self.ip,
                 xt,
+                code,
                 self.stack_contents(),
                 self.rstack_contents(),
             );
-            self.ip = self.ip + C::one();
-            self.execute_xt(xt)?;
+            if code == self.do_colon_address {
+                let ip = self.ip;
+                self.rstack_push(ip);
+                self.ip = Self::xt_to_pfa(xt);
+            } else {
+                let prim = *self.primitives.get(&code).ok_or_else(|| -> VmError {
+                    // FIXME: context, "undefined interpreter" instead of (bogus) code
+                    VmError::forth_error(128).into()
+                })?;
+                match prim(self) {
+                    Err(e) => return Err(e),
+                    Ok(Prim::Exit) => break,
+                    Ok(Prim::Continue) => {}
+                    Ok(Prim::Execute(exec_xt)) => {
+                        xt = exec_xt;
+                        continue;
+                    }
+                }
+            }
+            if self.ip == start_ip {
+                break;
+            }
+            xt = self.do_next();
         }
+        trace!("inner_interpreter exit: ip={:?} xt={:?}", self.ip, xt);
         Ok(())
+    }
+
+    fn do_next(&mut self) -> C {
+        let ip = self.ip;
+        let xt = self.code_cell(ip);
+        self.ip = ip + C::one();
+        xt
     }
 
     fn do_literal_xt(&self) -> Result<C, VmError> {
@@ -207,7 +243,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                     self.words_mut().define(name, xt, false, false);
                     let pfa = Self::xt_to_pfa(xt);
                     self.code_push(pfa);
-                    self.register_interpreter(pfa, *run);
+                    self.register_primitive(pfa, *run);
                 }
                 Vocable::Forth { code, immediate } => {
                     self.compile_forth_vocable(name, code, *immediate)?;
@@ -328,8 +364,8 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         self.current_dictionary = d;
     }
 
-    fn register_interpreter(&mut self, pfa: C, interp: Interpreter<C, B>) {
-        self.interpreters.insert(pfa, interp);
+    fn register_primitive(&mut self, pfa: C, interp: Primitive<C, B>) {
+        self.primitives.insert(pfa, interp);
     }
 
     fn current_dict(&self) -> &Dict<C> {
@@ -582,15 +618,6 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         trace!("code_push: {:?} {:?}", dp, code);
         self.code[dp.into()] = code;
         self.set_dp(dp + C::one());
-    }
-
-    fn execute_xt(&mut self, xt: C) -> Result<(), VmError> {
-        // TODO: xtl-call
-        let code = self.code_cell(xt);
-        self.interpreters.get(&code).ok_or_else(|| -> VmError {
-            // FIXME: context, "undefined interpreter" instead of (bogus) code
-            VmError::forth_error(128).into()
-        })?(self, xt)
     }
 
     fn word_get(&self, name: &str) -> Option<Word<C>> {

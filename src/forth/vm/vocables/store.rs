@@ -12,14 +12,12 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
         fn run_here(vm, "here") {
             let here = vm.here();
             vm.stack_push(here);
-            Ok(())
         }
 
         fn run_allot(vm, "allot") {
             let n = vm.stack_pop().unwrap();
             let here = vm.here();
             vm.set_here(here + n);
-            Ok(())
         }
 
         fn run_store(vm, ",") {
@@ -27,7 +25,6 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
             let value = vm.stack_pop().unwrap();
             vm.ram_cell_set(here, value);
             vm.set_here(here + C::size());
-            Ok(())
         }
 
         fn run_cmove(vm, "cmove>") {
@@ -39,7 +36,6 @@ pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabular
                 let offset = n - i;
                 ram[addr_to + offset] = ram[addr_from + offset];
             }
-            Ok(())
         }
     }
     Ok(v)

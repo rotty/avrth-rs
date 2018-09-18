@@ -7,7 +7,7 @@ use byteorder::ByteOrder;
 use failure::{Error, ResultExt};
 
 use forth::reader::{Reader, Token};
-use forth::vm::{Cell, Interpreter};
+use forth::vm::{Cell, Primitive};
 
 #[macro_use]
 mod macros;
@@ -54,7 +54,7 @@ impl SourceArena {
 pub enum Vocable<'a, C: Cell, B: ByteOrder> {
     Primitive {
         // TODO: assembly
-        run: Interpreter<C, B>,
+        run: Primitive<C, B>,
     },
     Forth {
         immediate: bool,
@@ -95,7 +95,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         }
     }
 
-    pub fn define_primitive(&mut self, name: &str, run: Interpreter<C, B>) {
+    pub fn define_primitive(&mut self, name: &str, run: Primitive<C, B>) {
         self.vocables
             .insert(name.into(), Vocable::Primitive { run: run });
         self.names.push(name.into());
