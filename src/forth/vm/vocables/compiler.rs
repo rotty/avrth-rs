@@ -22,6 +22,11 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
             let w = vm.stack_pop().unwrap();
             vm.code_push(w);
         }
+        fn run_iallot(vm, "iallot") {
+            let n = vm.stack_pop().unwrap();
+            let dp = vm.dp();
+            vm.set_dp(dp + n);
+        }
     }
     v.load_forth_words(arena, &["forth", "lib", "compiler.fs"])?;
     Ok(v)
