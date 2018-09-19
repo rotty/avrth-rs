@@ -30,7 +30,7 @@
 ;
 
 : does>
-    (does>) i,
+    ['] (does>) i,
 ; immediate
 
 : literal

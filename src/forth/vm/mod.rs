@@ -418,8 +418,9 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
             .and_then(|name| self.words().get(name).map(|w| w.clone()))
     }
 
-    fn set_current_word_xt(&mut self, _xt: C) {
-        unimplemented!()
+    fn set_current_word_xt(&mut self, xt: C) {
+        let name = self.current_word_name.as_ref().unwrap().clone();
+        self.words_mut().get_mut(&name).unwrap().xt = xt;
     }
 
     fn word_map(&self) -> BTreeMap<C, String> {
