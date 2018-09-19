@@ -39,11 +39,7 @@
 ;
 
 : include
-    parse-name open-file ?dup if
-        throw
-    else
-        include-file
-    then
+    parse-name open-file throw include-file
 ;
 
 : string-table-add ( c-addr u tableid -- )

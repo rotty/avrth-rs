@@ -21,7 +21,7 @@ mod test_util;
 
 pub use self::cell::Cell;
 use self::dict::{Dict, Word, WordList};
-use self::vocables::{SourceArena, Vocable, Vocabulary};
+use self::vocables::{Vocable, Vocabulary};
 use forth::reader::Token;
 use target::Target;
 
@@ -39,7 +39,7 @@ pub enum Prim<C> {
 }
 
 type Primitive<C, B> = fn(&mut Vm<C, B>) -> Result<Prim<C>, VmError>;
-type VocabularyLoader<C, B> = fn(&mut SourceArena) -> Result<Vocabulary<C, B>, Error>;
+type VocabularyLoader<C, B> = fn() -> Result<Vocabulary<'static, C, B>, Error>;
 
 pub struct Vm<C: Cell, B: ByteOrder> {
     parameters: Parameters<C>,
@@ -178,11 +178,10 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         //vm.register_interpreter(colon_pfa, Self::colon_interpreter);
         vm.words_mut().define("(:)", colon_pfa, false, false);
         vm.do_colon_address = colon_pfa;
-        let mut source_arena = SourceArena::new();
         for (dict, vocabularies) in options.layout {
             vm.set_dictionary(dict);
             for loader in vocabularies {
-                let vocabulary = loader(&mut source_arena)?;
+                let vocabulary = loader()?;
                 vm.compile_vocabulary(&vocabulary)?;
             }
         }

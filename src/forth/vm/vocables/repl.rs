@@ -6,10 +6,10 @@ use std::str;
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::vm::vocables::{SourceArena, Vocabulary};
+use forth::vm::vocables::Vocabulary;
 use forth::vm::{Cell, Vm};
 
-pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary<C, B>, Error> {
+pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
     let mut v = Vocabulary::new();
     primitives! {
         v,
@@ -62,7 +62,7 @@ pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary
             }
         }
     }
-    v.load_forth_words(arena, &["forth", "lib", "repl.fs"])?;
+    v.define_forth_words(include_str!("repl.fs"))?;
     Ok(v)
 }
 

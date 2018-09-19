@@ -1,10 +1,10 @@
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::vm::vocables::{SourceArena, Vocabulary};
+use forth::vm::vocables::Vocabulary;
 use forth::vm::Cell;
 
-pub fn load<C: Cell, B: ByteOrder>(_arena: &mut SourceArena) -> Result<Vocabulary<C, B>, Error> {
+pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
     let mut v = Vocabulary::new();
     primitives! {
         v,

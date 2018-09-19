@@ -4,13 +4,11 @@
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::reader::Reader;
-use forth::vm::vocables::{SourceArena, Vocabulary};
+use forth::vm::vocables::Vocabulary;
 use forth::vm::Cell;
 
-pub fn load<C: Cell, B: ByteOrder>(arena: &mut SourceArena) -> Result<Vocabulary<C, B>, Error> {
-    let mut reader = Reader::new(arena.load(&["forth", "lib", "control.fs"])?);
+pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
     let mut v = Vocabulary::new();
-    v.define_forth_words(&mut reader)?;
+    v.define_forth_words(include_str!("control.fs"))?;
     Ok(v)
 }

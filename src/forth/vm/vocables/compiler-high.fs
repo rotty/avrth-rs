@@ -40,3 +40,7 @@
 : sp0 [parameter] sp0 literal ;
 
 : rp0 [parameter] rp0 literal ;
+
+: depth ( -- n )
+    sp0 sp@ - cells / 1-
+;

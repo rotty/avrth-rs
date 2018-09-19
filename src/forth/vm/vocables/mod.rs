@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::fs;
-use std::path::PathBuf;
 
 use byteorder::ByteOrder;
-use failure::{Error, ResultExt};
+use failure::Error;
 
 use forth::reader::{Reader, Token};
 use forth::vm::{Cell, Primitive};
@@ -20,37 +18,6 @@ pub mod io;
 pub mod prim;
 pub mod repl;
 pub mod store;
-
-pub struct SourceArena {
-    table: HashMap<Vec<String>, String>,
-}
-
-impl SourceArena {
-    pub fn new() -> SourceArena {
-        SourceArena {
-            table: HashMap::new(),
-        }
-    }
-    pub fn load<'a>(&'a mut self, path: &[&str]) -> Result<&'a str, Error> {
-        use std::collections::hash_map::Entry;
-        // TODO: better way of finding the root directory instead of
-        // relying on working directory.
-        let mut buf = PathBuf::new();
-        buf.push("src");
-        buf.extend(path);
-        let full_path = buf.as_path();
-        let key = path.iter().map(|s| s.to_string()).collect();
-        let entry: Entry<'a, Vec<String>, _> = self.table.entry(key);
-        match entry {
-            Entry::Occupied(entry) => Ok(entry.into_mut()),
-            Entry::Vacant(entry) => {
-                let content = fs::read_to_string(full_path)
-                    .with_context(|_| format!("while reading {}", full_path.display()))?;
-                Ok(entry.insert(content))
-            }
-        }
-    }
-}
 
 pub enum Vocable<'a, C: Cell, B: ByteOrder> {
     Primitive {
@@ -102,16 +69,6 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         self.names.push(name.into());
     }
 
-    pub fn load_forth_words(
-        &mut self,
-        arena: &'a mut SourceArena,
-        path: &[&str],
-    ) -> Result<(), Error> {
-        let mut reader = Reader::new(arena.load(path)?);
-        self.define_forth_words(&mut reader)?;
-        Ok(())
-    }
-
     pub fn define_forth_word(&mut self, name: &str, immediate: bool, code: Vec<Token<'a>>) {
         self.vocables.insert(
             name.into(),
@@ -123,7 +80,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         self.names.push(name.into());
     }
 
-    pub fn define_forth_words(&mut self, reader: &mut Reader<'a>) -> Result<(), Error> {
+    pub fn define_forth_words(&mut self, code: &'a str) -> Result<(), Error> {
         #[derive(Copy, Clone, Debug)]
         enum State<'a> {
             TopLevel,
@@ -131,7 +88,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
             InWord(&'a str),
             AfterWord(&'a str),
         }
-
+        let mut reader = Reader::new(code);
         let mut state = State::TopLevel;
         let mut code = vec![];
         for token in reader.tokens() {
