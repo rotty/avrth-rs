@@ -3,7 +3,6 @@ extern crate avrth;
 extern crate byteorder;
 extern crate env_logger;
 extern crate failure;
-#[macro_use]
 extern crate structopt;
 
 use std::fs::File;
@@ -22,7 +21,7 @@ use avrth::target::shim::ShimTarget;
 struct Avrth {
     #[structopt(subcommand)]
     command: Option<Command>,
-    #[structopt(short = "L", parse(from_os_str))]
+    #[structopt(short = "L", number_of_values = 1, parse(from_os_str))]
     fpath: Vec<PathBuf>,
 }
 
