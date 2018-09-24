@@ -1,0 +1,13 @@
+[package]
+name = "avrth-asm"
+version = "0.0.1"
+authors = ["Andreas Rottmann <mail@r0tty.org>"]
+license = "GPL-3.0-or-later"
+keywords = ["assembler", "avr"]
+edition = "2018"
+
+[dependencies]
+combine = "3.5.2"
+failure = "0.1.2"
+structopt = "0.2"
+env_logger = "0.5.13"
