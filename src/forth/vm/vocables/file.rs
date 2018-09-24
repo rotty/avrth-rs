@@ -169,8 +169,8 @@ fn io_result<C: Cell>(kind: io::ErrorKind) -> C {
     use std::io::ErrorKind::*;
 
     match kind {
-        NotFound => C::from_int(-2),
-        PermissionDenied => C::from_int(-3),
+        NotFound => C::from_int(-38),
+        PermissionDenied => C::from_int(-37),
         // TODO: handle more kinds
         _ => C::from_int(-1),
     }
