@@ -258,7 +258,7 @@ pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error>
         // Flow control and compiler support
         fn run_exit(vm, "exit") {
             if vm.rstack_len() == C::zero() {
-                return Ok(Prim::Exit)
+                return Ok(Prim::Exit);
             }
             let return_ip = vm.rstack_pop().unwrap();
             vm.ip = return_ip;
