@@ -1,6 +1,7 @@
 ///! Primitive words, i.e. those that must defined both in Rust and
 ///! the target (assembly)
 use std::convert;
+use std::mem::size_of;
 use std::thread;
 use std::time;
 
@@ -125,6 +126,10 @@ pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error>
             let n2 = vm.stack_dpop();
             let n1 = vm.stack_dpop();
             vm.stack_dpush(n1.wrapping_add(n2));
+        }
+        fn run_log2(vm, "log2") {
+            let n = vm.stack_pop().unwrap().to_int();
+            vm.stack_push(C::from_uint(size_of::<C>() * 8 - (n.leading_zeros() as usize)));
         }
 
         // Stack manipulation
