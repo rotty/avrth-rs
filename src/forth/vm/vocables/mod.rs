@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::fmt;
 
 use byteorder::ByteOrder;
-use failure::Error;
+use failure::{Error, format_err};
 
-use forth::reader::{Reader, Token};
-use forth::vm::{Cell, Primitive};
+use crate::forth::reader::{Reader, Token};
+use crate::forth::vm::{Cell, Primitive};
 
 #[macro_use]
 mod macros;

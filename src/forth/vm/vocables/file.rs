@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::vm::vocables::Vocabulary;
-use forth::vm::{Cell, Prim};
+use crate::forth::vm::vocables::Vocabulary;
+use crate::forth::vm::{Cell, Prim};
 
 pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
     let mut v = Vocabulary::new();
@@ -180,8 +180,8 @@ fn io_result<C: Cell>(kind: io::ErrorKind) -> C {
 mod tests {
     extern crate env_logger;
 
-    use forth::vm::test_util::{run_io_test, run_test};
-    use forth::vm::{vocables, Cell, VocabularyLoader};
+    use crate::forth::vm::test_util::{run_io_test, run_test};
+    use crate::forth::vm::{vocables, Cell, VocabularyLoader};
 
     use byteorder::LittleEndian;
 

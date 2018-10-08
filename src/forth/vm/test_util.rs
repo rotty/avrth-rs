@@ -5,10 +5,10 @@ use std::rc::Rc;
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::reader::Reader;
-use forth::vm::vocables::Vocabulary;
-use forth::vm::{Cell, Dictionary, Options, Vm, VocabularyLoader};
-use target::shim::ShimTarget;
+use crate::forth::reader::Reader;
+use crate::forth::vm::vocables::Vocabulary;
+use crate::forth::vm::{Cell, Dictionary, Options, Vm, VocabularyLoader};
+use crate::target::shim::ShimTarget;
 
 struct RefCursor(Rc<RefCell<Cursor<Vec<u8>>>>);
 

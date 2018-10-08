@@ -1,8 +1,8 @@
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::vm::vocables::Vocabulary;
-use forth::vm::Cell;
+use crate::forth::vm::vocables::Vocabulary;
+use crate::forth::vm::Cell;
 
 pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
     let mut v = Vocabulary::new();
@@ -24,8 +24,8 @@ pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error>
 
 #[cfg(test)]
 mod tests {
-    use forth::vm::test_util::run_test;
-    use forth::vm::{vocables, VocabularyLoader};
+    use crate::forth::vm::test_util::run_test;
+    use crate::forth::vm::{vocables, VocabularyLoader};
 
     use byteorder::LittleEndian;
 

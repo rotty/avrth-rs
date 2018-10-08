@@ -4,6 +4,7 @@ version = "0.0.1"
 authors = ["Andreas Rottmann <a.rottmann@gmx.at>"]
 license = "GPL-3.0-or-later"
 keywords = ["forth"]
+edition = "2018"
 
 [dependencies]
 structopt = "0.2"

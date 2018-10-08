@@ -9,7 +9,8 @@ use std::rc::Rc;
 use std::str;
 
 use byteorder::ByteOrder;
-use failure::Error;
+use failure::{Error, Fail};
+use log::trace;
 use num_traits::NumCast;
 
 pub mod cell;
@@ -22,8 +23,8 @@ mod test_util;
 pub use self::cell::Cell;
 use self::dict::{Dict, Word, WordList};
 use self::vocables::{Vocable, Vocabulary};
-use forth::reader::Token;
-use target::Target;
+use crate::forth::reader::Token;
+use crate::target::Target;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Dictionary {

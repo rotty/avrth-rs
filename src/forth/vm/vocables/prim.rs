@@ -7,8 +7,8 @@ use std::time;
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::vm::vocables::Vocabulary;
-use forth::vm::{Cell, Prim, Vm, VmError};
+use crate::forth::vm::vocables::Vocabulary;
+use crate::forth::vm::{Cell, Prim, Vm, VmError};
 
 fn id<T>(x: T) -> T {
     x
@@ -342,8 +342,8 @@ fn run_loop<C: Cell, B: ByteOrder>(vm: &mut Vm<C, B>, n: C) {
 mod tests {
     extern crate env_logger;
 
-    use forth::vm::test_util::run_test;
-    use forth::vm::{vocables, Cell, VocabularyLoader};
+    use crate::forth::vm::test_util::run_test;
+    use crate::forth::vm::{vocables, Cell, VocabularyLoader};
 
     use byteorder::LittleEndian;
 

@@ -1,8 +1,8 @@
 use byteorder::ByteOrder;
 use failure::Error;
 
-use forth::vm::vocables::Vocabulary;
-use forth::vm::Cell;
+use crate::forth::vm::vocables::Vocabulary;
+use crate::forth::vm::Cell;
 
 pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
     let mut v = Vocabulary::new();

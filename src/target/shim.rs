@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::Target;
-use forth::vm::Cell;
+use crate::forth::vm::Cell;
 
 pub struct ShimTarget<C: Cell> {
     symbols: HashMap<String, C>,
