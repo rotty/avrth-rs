@@ -1,9 +1,9 @@
 [package]
 name = "avrth"
 version = "0.0.1"
-authors = ["Andreas Rottmann <a.rottmann@gmx.at>"]
+authors = ["Andreas Rottmann <mail@r0tty.org>"]
 license = "GPL-3.0-or-later"
-keywords = ["forth"]
+keywords = ["forth", "avr"]
 edition = "2018"
 
 [dependencies]
