@@ -116,8 +116,7 @@ where
     optional(r#try(label)).skip(hspace()).and(optional(choice((
         directive.map(|(name, args)| Command::Directive(name, args)),
         instruction.map(|(name, args)| Command::Instruction(name, args)),
-    )))).skip(hspace().with(vspace()))
-        .map(|(label, stmt)| Line(label, stmt))
+    )))).skip(hspace()).map(|(label, stmt)| Line(label, stmt))
 }
 
 impl Extend<Line> for Vec<Command> {
@@ -141,7 +140,7 @@ where
     I: Stream<Item = char>,
     I::Error: ParseError<char, I::Range, I::Position>,
 {
-    many(line()).skip(eof())
+    sep_by(line(), vspace()).skip(eof())
 }
 
 fn ident<I>() -> impl Parser<Input = I, Output = String>
@@ -149,7 +148,7 @@ where
     I: Stream<Item = char>,
     I::Error: ParseError<I::Item, I::Range, I::Position>,
 {
-    many1(letter()).and(many(alpha_num().or(char('_')))).map(|(mut prefix, suffix): (String, String)| {
+    many1(letter().or(char('_'))).and(many(alpha_num().or(char('_')))).map(|(mut prefix, suffix): (String, String)| {
         prefix.extend(suffix.chars());
         prefix
     })
@@ -324,6 +323,8 @@ mod tests {
                    ("TEST123".into(), ""));
         assert_eq!(ident().easy_parse("TEST_123_bar").expect("parsing failed"),
                    ("TEST_123_bar".into(), ""));
+        assert_eq!(ident().easy_parse("_TEST_123_bar").expect("parsing failed"),
+                   ("_TEST_123_bar".into(), ""));
     }
 
     #[test]
@@ -344,6 +345,17 @@ mod tests {
             ),
         ]);
         assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn test_file_eof() {
+        assert_eq!(file().easy_parse(concat!(".device ATmega8\n",
+                                             ".db 1, 2")).expect("parsing failed"),
+                   (vec![
+                       Command::Directive("device".into(), vec![Expr::ident("ATmega8")]),
+                       Command::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)])
+                   ],
+                    ""));
     }
 
     #[test]
