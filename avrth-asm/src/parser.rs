@@ -5,7 +5,7 @@ use combine::parser::repeat::skip_until;
 use combine::{any, between, chainl1, choice, eof, many, many1, none_of, optional, satisfy, sep_by, skip_many, skip_many1, r#try, Parser};
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Command {
+pub enum Item {
     Directive(String, Vec<Expr>),
     Instruction(String, Vec<Expr>),
     Label(String),
@@ -112,7 +112,7 @@ parser! {
     }
 }
 
-struct Line(Option<String>, Option<Command>);
+struct Line(Option<String>, Option<Item>);
 
 pub fn line<I>() -> impl Parser<Input = I, Output = Line>
 where
@@ -124,19 +124,19 @@ where
     let instruction = ident().and(args());
     let label = ident().skip(char(':'));
     optional(r#try(label)).skip(hspace()).and(optional(choice((
-        directive.map(|(name, args)| Command::Directive(name, args)),
-        instruction.map(|(name, args)| Command::Instruction(name, args)),
+        directive.map(|(name, args)| Item::Directive(name, args)),
+        instruction.map(|(name, args)| Item::Instruction(name, args)),
     )))).skip(hspace()).map(|(label, stmt)| Line(label, stmt))
 }
 
-impl Extend<Line> for Vec<Command> {
+impl Extend<Line> for Vec<Item> {
     fn extend<T>(&mut self, lines: T)
     where
         T: IntoIterator<Item = Line>
     {
         for line in lines.into_iter() {
             if let Some(label) = line.0 {
-                self.push(Command::Label(label));
+                self.push(Item::Label(label));
             }
             if let Some(stmt) = line.1 {
                 self.push(stmt);
@@ -145,7 +145,7 @@ impl Extend<Line> for Vec<Command> {
     }
 }
 
-pub fn file<I>() -> impl Parser<Input = I, Output = Vec<Command>>
+pub fn file<I>() -> impl Parser<Input = I, Output = Vec<Item>>
 where
     I: Stream<Item = char>,
     I::Error: ParseError<char, I::Range, I::Position>,
@@ -355,10 +355,10 @@ mod tests {
                     ".db 1, 2\n",
                     ".db \"Hello\", 32, \"World\"\n")).expect("parsing failed");
         assert_eq!(commands, vec![
-            Command::Directive("device".into(), vec![Expr::ident("ATmega8")]),
-            Command::Directive("org".into(), vec![Expr::Int(0)]),
-            Command::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)]),
-            Command::Directive("db".into(), vec![
+            Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
+            Item::Directive("org".into(), vec![Expr::Int(0)]),
+            Item::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)]),
+            Item::Directive("db".into(), vec![
                 Expr::String("Hello".into()),
                 Expr::Int(32),
                 Expr::String("World".into())],
@@ -372,8 +372,8 @@ mod tests {
         assert_eq!(file().easy_parse(concat!(".device ATmega8\n",
                                              ".db 1, 2")).expect("parsing failed"),
                    (vec![
-                       Command::Directive("device".into(), vec![Expr::ident("ATmega8")]),
-                       Command::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)])
+                       Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
+                       Item::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)])
                    ],
                     ""));
     }
@@ -383,7 +383,7 @@ mod tests {
         let (commands, rest): (Vec<_>, _) = file().easy_parse(
             ".if (pc>FLASHEND)\n").expect("parsing failed");
         assert_eq!(commands, vec![
-            Command::Directive("if".into(),
+            Item::Directive("if".into(),
                                vec![Expr::greater_than(Expr::ident("pc"),
                                                        Expr::ident("FLASHEND"))]),
         ]);
@@ -395,7 +395,7 @@ mod tests {
         let (commands, rest): (Vec<_>, _) = file().easy_parse(
             ".set AMFORTH_NRWW_SIZE=(FLASHEND-AMFORTH_RO_SEG)*2\n").expect("parsing failed");
         assert_eq!(commands, vec![
-            Command::Directive("set".into(),
+            Item::Directive("set".into(),
                                vec![Expr::assign("AMFORTH_NRWW_SIZE",
                                                  Expr::multiply(Expr::subtract(Expr::ident("FLASHEND"),
                                                                                Expr::ident("AMFORTH_RO_SEG")),
@@ -412,8 +412,8 @@ mod tests {
                     ".org 0 ; This is the interrupt vector address\n",
                     "; This is a line with just a comment\n")).expect("parsing failed");
         assert_eq!(commands, vec![
-            Command::Directive("device".into(), vec![Expr::ident("ATmega8")]),
-            Command::Directive("org".into(), vec![Expr::Int(0)]),
+            Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
+            Item::Directive("org".into(), vec![Expr::Int(0)]),
         ]);
         assert_eq!(rest, "");
     }
@@ -424,9 +424,9 @@ mod tests {
             concat!("ldi R16, ';'\n",
                     "ldi R16, 0x3b\n")).expect("parsing failed");
         assert_eq!(commands, vec![
-            Command::Instruction("ldi".into(),
+            Item::Instruction("ldi".into(),
                                    vec![Expr::ident("R16"), Expr::Char(';')]),
-            Command::Instruction("ldi".into(),
+            Item::Instruction("ldi".into(),
                                    vec![Expr::ident("R16"), Expr::Int(0x3b)]),
         ]);
         assert_eq!(rest, "");
@@ -438,10 +438,10 @@ mod tests {
             concat!("FOO: .byte 2\n",
                     "BAR: ldi R16, 0\n")).expect("parsing failed");
         assert_eq!(commands, vec![
-            Command::Label("FOO".into()),
-            Command::Directive("byte".into(), vec![Expr::Int(2)]),
-            Command::Label("BAR".into()),
-            Command::Instruction("ldi".into(), vec![Expr::ident("R16"), Expr::Int(0)]),
+            Item::Label("FOO".into()),
+            Item::Directive("byte".into(), vec![Expr::Int(2)]),
+            Item::Label("BAR".into()),
+            Item::Instruction("ldi".into(), vec![Expr::ident("R16"), Expr::Int(0)]),
         ]);
         assert_eq!(rest, "");
     }
