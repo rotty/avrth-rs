@@ -17,15 +17,22 @@ pub enum BinaryOperator {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
+    ShiftLeft,
+    ShiftRight,
     Equals,
     NotEquals,
     LessThan,
     GreaterThan,
+    BitAnd,
+    BitXor,
+    BitOr,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum UnaryOperator {
-    Negate,
+    Minus,
+    BitNot,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -47,6 +54,9 @@ impl Expr {
     }
     pub fn binary(op: BinaryOperator, e1: Expr, e2: Expr) -> Self {
         Expr::Binary(op, Box::new(e1), Box::new(e2))
+    }
+    pub fn unary(op: UnaryOperator, e: Expr) -> Self {
+        Expr::Unary(op, Box::new(e))
     }
     pub fn add(e1: Expr, e2: Expr) -> Self {
         Self::binary(BinaryOperator::Add, e1, e2)
@@ -72,8 +82,8 @@ impl Expr {
     pub fn apply(name: impl Into<String>, args: Vec<Expr>) -> Self {
         Expr::Apply(name.into(), args)
     }
-    pub fn negate(e: Expr) -> Self {
-        Expr::Unary(UnaryOperator::Negate, Box::new(e))
+    pub fn minus(e: Expr) -> Self {
+        Expr::Unary(UnaryOperator::Minus, Box::new(e))
     }
     pub fn post_inc(name: impl Into<String>) -> Self {
         Expr::PostInc(name.into())
@@ -226,7 +236,9 @@ where
             Some(args) => Expr::apply(id, args),
             None => Expr::Ident(id),
         });
-    let negated = || char('-').with(factor()).map(Expr::negate);
+    let unary_op = choice(((char('-')).map(|_| UnaryOperator::Minus),
+                           (char('~')).map(|_| UnaryOperator::BitNot)));
+    let negated = || unary_op.and(factor()).map(|(op, e)| Expr::unary(op, e));
     hspace().with(choice((
         between(char('('), char(')'), expr()),
         ident_or_call(),
@@ -262,13 +274,19 @@ where
     use self::BinaryOperator::*;
 
     let term_op = binary_op(choice((char('*').map(|_| Multiply),
-                                    char('/').map(|_| Divide))));
+                                    char('/').map(|_| Divide),
+                                    char('%').map(|_| Modulo))));
     let arith_op = binary_op(choice((char('+').map(|_| Add),
                                      char('-').map(|_| Subtract))));
+    let shift_op = binary_op(choice((r#try(string("<<")).map(|_| ShiftLeft),
+                                     r#try(string(">>")).map(|_| ShiftRight))));
     let cmp_op = binary_op(choice((string("==").map(|_| Equals),
                                    string("!=").map(|_| NotEquals),
                                    char('>').map(|_| GreaterThan),
                                    char('<').map(|_| LessThan))));
+    let bit_op = binary_op(choice((char('&').map(|_| BitAnd),
+                                   char('^').map(|_| BitXor),
+                                   char('|').map(|_| BitOr))));
     let assign_expr = ident().skip(hspace())
         .skip(lex_char('='))
         .and(expr())
@@ -276,8 +294,10 @@ where
     let post_inc = ident().skip(lex_char('+')).map(Expr::post_inc);
     let term = chainl1(factor(), term_op);
     let arith_expr = chainl1(term, arith_op);
-    let cmp_expr = chainl1(arith_expr, cmp_op);
-    choice((r#try(assign_expr), r#try(cmp_expr), post_inc))
+    let shift_expr = chainl1(arith_expr, shift_op);
+    let cmp_expr = chainl1(shift_expr, cmp_op);
+    let bit_expr = chainl1(cmp_expr, bit_op);
+    choice((r#try(assign_expr), r#try(bit_expr), post_inc))
 }
 
 parser!{
@@ -439,16 +459,16 @@ mod tests {
     }
 
     #[test]
-    fn test_expr_negate() {
+    fn test_expr_minus() {
         assert_eq!(expr().easy_parse("-42").expect("parsing failed"),
-                   (Expr::negate(Expr::Int(42)),
+                   (Expr::minus(Expr::Int(42)),
                     ""));
         assert_eq!(expr().easy_parse("-42 * foo").expect("parsing failed"),
-                   (Expr::multiply(Expr::negate(Expr::Int(42)), Expr::ident("foo")),
+                   (Expr::multiply(Expr::minus(Expr::Int(42)), Expr::ident("foo")),
                     ""));
         assert_eq!(expr().easy_parse("TEST + 42 * -foo").expect("parsing failed"),
                    (Expr::add(Expr::ident("TEST"),
-                              Expr::multiply(Expr::Int(42), Expr::negate(Expr::ident("foo")))),
+                              Expr::multiply(Expr::Int(42), Expr::minus(Expr::ident("foo")))),
                     ""));
     }
 
