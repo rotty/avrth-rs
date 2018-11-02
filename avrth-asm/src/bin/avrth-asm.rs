@@ -1,7 +1,7 @@
 #![recursion_limit = "1024"]
 
 use avrth_asm::avr_asm::Assembler;
-use avrth_asm::parser;
+use avrth_asm::parser::{self, Item};
 
 use combine::Parser;
 use combine::stream::IteratorStream;
@@ -25,6 +25,7 @@ fn main() -> Result<(), Error> {
     env_logger::init();
 
     let args = AsmArgs::from_args();
+    let mut assembler = Assembler::new();
     for filename in args.files {
         let file = File::open(filename.clone())?;
         let mut reader = BufReader::new(file);
@@ -32,12 +33,21 @@ fn main() -> Result<(), Error> {
         let mut input = String::new();
         reader.read_to_string(&mut input)?;
         let input = BufferedStream::new(State::new(IteratorStream::new(input.chars())), 128);
-        let (commands, _rest): (Vec<_>, _) = parser::file().easy_parse(input).with_context(|e| {
+        let (items, _rest): (Vec<_>, _) = parser::file().easy_parse(input).with_context(|e| {
             format!("error parsing {}", filename.display())
         })?;
-        for command in commands {
-            println!("{:?}", command);
+        for item in items {
+            println!("{:?}", item);
+            match item {
+                Item::Directive(name, args) => handle_directive(&mut assembler, &name, &args),
+                Item::Label(name) => assembler.define_symbol(&name, i32::from(assembler.pc())),
+                Item::Instruction(name, args) => unimplemented!(),
+            }
         }
     }
     Ok(())
+}
+
+fn handle_directive(assembler: &mut Assembler, name: &str, args: &[parser::Expr]) {
+    unimplemented!()
 }

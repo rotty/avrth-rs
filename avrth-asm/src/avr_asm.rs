@@ -425,8 +425,14 @@ impl Assembler {
             Ok(Operand::Value(func(self, &operands)?))
         }
     }
+    pub fn pc(&self) -> u16 {
+        self.pc
+    }
     fn symbol_lookup(&self, name: &str) -> Option<i32> {
         self.symbols.get(name).map(|n| *n)
+    }
+    pub fn define_symbol(&mut self, name: &str, value: i32) {
+        self.symbols.insert(name.into(), value);
     }
 }
 
