@@ -27,12 +27,15 @@ pub enum BinaryOperator {
     BitAnd,
     BitXor,
     BitOr,
+    LogicalAnd,
+    LogicalOr,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum UnaryOperator {
     Minus,
     BitNot,
+    LogicalNot,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -41,6 +44,7 @@ pub enum Expr {
     String(String),
     Char(char),
     Int(i64),
+    ArgRef(i64),
     Binary(BinaryOperator, Box<Expr>, Box<Expr>),
     Unary(UnaryOperator, Box<Expr>),
     Apply(String, Vec<Expr>),
@@ -78,6 +82,9 @@ impl Expr {
     }
     pub fn greater_than(e1: Expr, e2: Expr) -> Self {
         Self::binary(BinaryOperator::GreaterThan, e1, e2)
+    }
+    pub fn logical_or(e1: Expr, e2: Expr) -> Self {
+        Self::binary(BinaryOperator::LogicalOr, e1, e2)
     }
     pub fn apply(name: impl Into<String>, args: Vec<Expr>) -> Self {
         Expr::Apply(name.into(), args)
@@ -226,7 +233,9 @@ where
 {
     let string_literal = || between(char('"'), char('"'), many(escaped_char(&['"'])));
     let char_literal = || between(char('\''), char('\''), escaped_char(&['\'']));
+    let arg_ref = || char('@').with(int_literal());
     let literal = || choice((
+        arg_ref().map(Expr::ArgRef),
         int_literal().map(Expr::Int),
         string_literal().map(Expr::String),
         char_literal().map(Expr::Char),
@@ -297,7 +306,9 @@ where
     let shift_expr = chainl1(arith_expr, shift_op);
     let cmp_expr = chainl1(shift_expr, cmp_op);
     let bit_expr = chainl1(cmp_expr, bit_op);
-    choice((r#try(assign_expr), r#try(bit_expr), post_inc))
+    let logical_and_expr = chainl1(bit_expr, binary_op(r#try(string("&&")).map(|_| LogicalAnd)));
+    let logical_or_expr = chainl1(logical_and_expr, binary_op(r#try(string("||")).map(|_| LogicalOr)));
+    choice((r#try(assign_expr), r#try(logical_or_expr), post_inc))
 }
 
 parser!{
@@ -348,6 +359,24 @@ mod tests {
     }
 
     #[test]
+    fn test_arg_ref() {
+        assert_eq!(expr().easy_parse("@42").expect("parsing failed"),
+                   (Expr::ArgRef(42), ""));
+    }
+
+    #[test]
+    fn test_logical_and() {
+        assert_eq!(expr().easy_parse("a && b").expect("parsing failed"),
+                   (Expr::ArgRef(42), ""));
+    }
+
+    #[test]
+    fn test_logical_or() {
+        assert_eq!(expr().easy_parse("a || b").expect("parsing failed"),
+                   (Expr::ArgRef(42), ""));
+    }
+
+    #[test]
     fn test_directive() {
         let (commands, rest): (Vec<_>, _) = file().easy_parse(
             concat!(".device ATmega8\n",
@@ -388,6 +417,19 @@ mod tests {
                                                        Expr::ident("FLASHEND"))]),
         ]);
         assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn test_directive_if_arg_ref() {
+        assert_eq!(file().easy_parse(".if (@0-pc > 2040) || (pc-@0>2040)\n").expect("parsing failed"),
+                   (vec![
+                       Item::Directive("if".into(),
+                                       vec![Expr::logical_or(Expr::greater_than(Expr::subtract(Expr::ArgRef(0), Expr::ident("pc")),
+                                                                                Expr::Int(2040)),
+                                                             Expr::greater_than(Expr::subtract(Expr::ident("pc"), Expr::ArgRef(0)),
+                                                                           Expr::Int(2040)))])
+                   ],
+                    ""));
     }
 
     #[test]

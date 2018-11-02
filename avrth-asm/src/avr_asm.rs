@@ -253,6 +253,7 @@ pub struct Assembler {
     pc: u16,
     blocks: BTreeMap<u16, Block>,
     defers: Vec<DeferredEmit>,
+    current_block: Option<(u16, Block)>,
 }
 
 fn avr_instruction_set() -> InstructionSet {
@@ -308,31 +309,40 @@ impl Assembler {
             pc: 0,
             blocks: BTreeMap::new(),
             defers: vec![],
+            current_block: None,
         }
     }
-    pub fn assemble<'a, I>(&mut self, instructions: I) -> Result<(), Error>
+    pub fn assemble(&mut self, mnemonic: &str, args: &[Expr]) -> Result<(), Error> {
+        let pc = self.pc();
+        let mut current = self.current_block.take();
+        let (block_base, block) = current.get_or_insert_with(|| (pc, Block::new()));
+        let emitter = self
+            .instructions
+            .get(mnemonic)
+            .ok_or_else(|| format_err!("unknown mnemonic `{}`", mnemonic))?;
+        // FIXME: check pc fits into u16
+        let pc = *block_base + block.len() as u16;
+        match emitter.emit(self, block, pc, args)? {
+            Some(defer) => self.defers.push(defer),
+            None => {}
+        }
+        self.current_block = current;
+        Ok(())
+    }
+    pub fn assemble_iter<'a, I>(&mut self, instructions: I) -> Result<(), Error>
     where
         I: IntoIterator<Item = &'a (&'a str, &'a [Expr])>,
     {
-        let mut block = Block::new();
-        let block_base = self.pc;
         for (mnemonic, args) in instructions.into_iter() {
-            let emitter = self
-                .instructions
-                .get(mnemonic)
-                .ok_or_else(|| format_err!("unknown mnemonic `{}`", mnemonic))?;
-            // FIXME: check pc fits into u16
-            let pc = block_base + block.len() as u16;
-            match emitter.emit(self, &mut block, pc, args)? {
-                Some(defer) => self.defers.push(defer),
-                None => {}
-            }
+            self.assemble(mnemonic, args)?;
         }
-        self.pc = block_base + block.len() as u16;
-        self.blocks.insert(block_base, block);
         Ok(())
     }
     pub fn flush(&mut self) -> Result<BTreeMap<u16, Vec<u8>>, Error> {
+        if let Some((block_base, block)) = self.current_block.take() {
+            self.pc = block_base + block.len() as u16;
+            self.blocks.insert(block_base, block);
+        }
         // Empty our state first, so it is defined in case of failure.
         let blocks = mem::replace(&mut self.blocks, BTreeMap::new());
         let defers = mem::replace(&mut self.defers, vec![]);
@@ -425,8 +435,14 @@ impl Assembler {
             Ok(Operand::Value(func(self, &operands)?))
         }
     }
+    pub fn pc(&self) -> u16 {
+        self.pc
+    }
     fn symbol_lookup(&self, name: &str) -> Option<i32> {
         self.symbols.get(name).map(|n| *n)
+    }
+    pub fn define_symbol(&mut self, name: &str, value: i32) {
+        self.symbols.insert(name.into(), value);
     }
 }
 
@@ -487,10 +503,10 @@ mod tests {
     fn test_inst_mul() {
         let mut assembler = Assembler::new();
         assembler
-            .assemble(&[(
+            .assemble(
                 "mul",
                 vec![Expr::Ident("r16".into()), Expr::Ident("r10".into())].as_slice(),
-            )]).unwrap();
+            ).unwrap();
         let blocks: Vec<_> = assembler
             .flush()
             .expect("could not flush")
