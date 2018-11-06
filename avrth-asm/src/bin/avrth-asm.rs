@@ -60,7 +60,7 @@ impl Asm {
         P: AsRef<Path>
     {
         let filename = filename.as_ref();
-        let file = File::open(filename).with_context(|e| format!("opening {} failed: {}", filename.display(), e))?;
+        let file = self.open_file(true, filename)?;
         let mut reader = BufReader::new(file);
         // TODO: Reading the whole file into memory is kinda suboptimal
         let mut input = String::new();
