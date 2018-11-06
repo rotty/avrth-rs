@@ -66,6 +66,7 @@ impl Cell for u16 {
 #[cfg(test)]
 mod tests {
     use super::Cell;
+    use quickcheck::quickcheck;
 
     quickcheck! {
         fn to_from_int_eq(input: u16) -> bool {
