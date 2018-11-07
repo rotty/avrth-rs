@@ -1,10 +1,13 @@
-use combine::char::{alpha_num, char, crlf, digit, hex_digit, letter, newline, string};
-use combine::error::{ParseError, StreamError};
-use combine::stream::{Stream, StreamOnce};
-use combine::parser::repeat::skip_until;
-use combine::{any, between, chainl1, choice, eof, many, many1, none_of, optional, satisfy, sep_by, skip_many, skip_many1, r#try, Parser};
+use combine::error::ParseError;
+use combine::stream::Stream;
+use combine::{
+    attempt, between, chainl1, choice, eof, optional, satisfy_map, sep_by, skip_many1, token,
+    Parser,
+};
 
-#[derive(Debug, Eq, PartialEq)]
+use crate::lexer::Token;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Item {
     Directive(String, Vec<Expr>),
     Instruction(String, Vec<Expr>),
@@ -38,11 +41,11 @@ pub enum UnaryOperator {
     LogicalNot,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expr {
     Ident(String),
     String(String),
-    Char(char),
+    Char(u8),
     Int(i64),
     ArgRef(i64),
     Binary(BinaryOperator, Box<Expr>, Box<Expr>),
@@ -100,46 +103,63 @@ impl Expr {
     }
 }
 
-fn lex_char<I>(c: char) -> impl Parser<Input = I, Output = char>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<char, I::Range, I::Position>,
-{
-    char(c).skip(hspace())
-}
-
 parser! {
-    fn comma_list[I]()(I) -> Vec<Expr>
+    fn comma_list['a, I]()(I) -> Vec<Expr>
     where [
-        I: Stream<Item = char>,
-        I::Error: ParseError<char, I::Range, I::Position>,
+        I: Stream<Token = Token<'a>>,
+        I::Error: ParseError<I::Token, I::Range, I::Position>,
     ]
     {
-        sep_by(expr(), lex_char(','))
+        sep_by(expr(), token(Token::Comma))
     }
 }
 
 struct Line(Option<String>, Option<Item>);
 
-pub fn line<I>() -> impl Parser<Input = I, Output = Line>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<char, I::Range, I::Position>,
-{
-    let args = || hspace().with(comma_list());
-    let directive = char('.').with(ident()).and(args());
-    let instruction = ident().and(args());
-    let label = ident().skip(char(':'));
-    optional(r#try(label)).skip(hspace()).and(optional(choice((
-        directive.map(|(name, args)| Item::Directive(name, args)),
-        instruction.map(|(name, args)| Item::Instruction(name, args)),
-    )))).skip(hspace()).map(|(label, stmt)| Line(label, stmt))
+parser! {
+    pub fn ident['a, I]()(I) -> String
+    where [
+        I: Stream<Token = Token<'a>>,
+        I::Error: ParseError<I::Token, I::Range, I::Position>,
+    ]
+    {
+        satisfy_map(|t| match t {
+            Token::Ident(name) => Some(name.to_string()),
+            _ => None,
+        })
+    }
+}
+
+parser! {
+    fn line['a, I]()(I) -> Line
+    where [
+        I: Stream<Token = Token<'a>>,
+        I::Error: ParseError<I::Token, I::Range, I::Position>,
+    ]
+    {
+        let directive = satisfy_map(|t| match t {
+            Token::Directive(name) => Some(name),
+            _ => None,
+        }).and(comma_list());
+        let instruction = satisfy_map(|t| match t {
+            Token::Ident(name) => Some(name),
+            _ => None
+        }).and(comma_list());
+        let label = satisfy_map(|t| match t {
+            Token::Ident(name) => Some(name),
+            _ => None
+        }).skip(token(Token::Colon));
+        optional(attempt(label)).and(optional(choice((
+            directive.map(|(name, args)| Item::Directive(name.into(), args)),
+            instruction.map(|(name, args)| Item::Instruction(name.into(), args)),
+        )))).map(|(label, stmt)| Line(label.map(|s| s.into()), stmt))
+    }
 }
 
 impl Extend<Line> for Vec<Item> {
     fn extend<T>(&mut self, lines: T)
     where
-        T: IntoIterator<Item = Line>
+        T: IntoIterator<Item = Line>,
     {
         for line in lines.into_iter() {
             if let Some(label) = line.0 {
@@ -152,429 +172,473 @@ impl Extend<Line> for Vec<Item> {
     }
 }
 
-pub fn file<I>() -> impl Parser<Input = I, Output = Vec<Item>>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<char, I::Range, I::Position>,
-{
-    sep_by(line(), vspace()).skip(eof())
-}
-
-fn ident<I>() -> impl Parser<Input = I, Output = String>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    many1(letter().or(char('_'))).and(many(alpha_num().or(char('_')))).map(|(mut prefix, suffix): (String, String)| {
-        prefix.extend(suffix.chars());
-        prefix
-    })
-}
-
-fn int_literal<I>() -> impl Parser<Input = I, Output = i64>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<char, I::Range, I::Position>,
-{
-    let decimal_digits = || many1(digit()).map(|digits| (10, digits));
-    let hex_digits = || choice((char('$').map(|_| ()),
-                                r#try(string("0x")).map(|_| ())))
-        .with(many1(hex_digit())).map(|digits| (16, digits));
-    choice((hex_digits(), decimal_digits()))
-    // This monstrous type is there to guide the type checker
-    // is required to avoid imposing a From<ParseIntError>
-    // bound on all parsers that call `int_literal`.
-        .and_then(|(base, digits): ((u32, String))| -> Result<i64, <<I as StreamOnce>::Error as ParseError<I::Item, I::Range, I::Position>>::StreamError> {
-            match i64::from_str_radix(&digits, base) {
-                Ok(value) => Ok(value),
-                Err(_) => Err(StreamError::message_message("integer out of bounds")),
-            }
-        })
-}
-
-fn hspace<I>() -> impl Parser<Input = I, Output = ()>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    let comment = char(';').with(skip_until(satisfy(|c| c == '\n' || c == '\r')));
-    skip_many(satisfy(|c: char| c.is_whitespace() && c != '\n' && c != '\r')).map(|_| ())
-        .skip(optional(comment)).silent()
-}
-
-fn vspace<I>() -> impl Parser<Input = I, Output = ()>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    let eol = || crlf().or(newline()).map(|_| ());
-    skip_many1(eol().skip(hspace()))
-}
-
-fn escaped_char<I>(terminators: &'static [char]) -> impl Parser<Input = I, Output = char>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    choice((
-        char('\\').with(any().map(|escaped| match escaped {
-            'n' => '\n',
-            't' => '\t',
-            _ => escaped,
-        })),
-        none_of(terminators.iter().cloned())
-    ))
-}
-
-fn factor_<I>() -> impl Parser<Input = I, Output = Expr>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    let string_literal = || between(char('"'), char('"'), many(escaped_char(&['"'])));
-    let char_literal = || between(char('\''), char('\''), escaped_char(&['\'']));
-    let arg_ref = || char('@').with(int_literal());
-    let literal = || choice((
-        arg_ref().map(Expr::ArgRef),
-        int_literal().map(Expr::Int),
-        string_literal().map(Expr::String),
-        char_literal().map(Expr::Char),
-    ));
-    let ident_or_call = || (ident().skip(hspace()), optional(between(char('('), char(')'), comma_list())))
-        .map(|(id, args)| match args {
-            Some(args) => Expr::apply(id, args),
-            None => Expr::Ident(id),
-        });
-    let unary_op = choice(((char('-')).map(|_| UnaryOperator::Minus),
-                           (char('~')).map(|_| UnaryOperator::BitNot)));
-    let negated = || unary_op.and(factor()).map(|(op, e)| Expr::unary(op, e));
-    hspace().with(choice((
-        between(char('('), char(')'), expr()),
-        ident_or_call(),
-        literal(),
-        negated(),
-    ))).skip(hspace())
-}
-
-parser!{
-    fn factor[I]()(I) -> Expr
+parser! {
+    pub fn file['a, I]()(I) -> Vec<Item>
     where [
-        I: Stream<Item = char>,
-        I::Error: ParseError<char, I::Range, I::Position>,
+        I: Stream<Token = Token<'a>>,
+        I::Error: ParseError<I::Token, I::Range, I::Position>,
     ]
     {
-        factor_()
+        sep_by(line(), vspace()).skip(eof())
     }
 }
 
-fn binary_op<I>(p: impl Parser<Input = I, Output = BinaryOperator>) -> impl Parser<Input = I, Output = impl Fn(Expr, Expr) -> Expr>
+fn vspace<'a, I>() -> impl Parser<I, Output = ()>
 where
-    I: Stream<Item = char>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
+    I: Stream<Token = Token<'a>>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
+{
+    skip_many1(token(Token::Eol))
+}
+
+// fn factor_<'a, I>() -> impl Parser<Input = I, Output = Expr>
+// where
+//     I: Stream<Item = Token<'a>>,
+//     I::Error: ParseError<I::Item, I::Range, I::Position>,
+// {
+// }
+
+parser! {
+    fn factor['a, I]()(I) -> Expr
+    where [
+        I: Stream<Token = Token<'a>>,
+        I::Error: ParseError<I::Token, I::Range, I::Position>,
+    ]
+    {
+        let arg_ref = || token(Token::At).with(satisfy_map(|t| match t {
+            Token::Int(n) => Some(Expr::ArgRef(n)),
+            _ => None,
+        }));
+        let literal = || satisfy_map(|t| match t {
+            Token::Int(n) => Some(Expr::Int(n)),
+            Token::Str(s) => Some(Expr::String(s)),
+            Token::Char(c) => Some(Expr::Char(c)),
+            _ => None,
+        });
+        let ident_or_call = || (ident(),
+                                optional(between(token(Token::LParen),
+                                                 token(Token::RParen),
+                                                 comma_list())))
+            .map(|(id, args)| match args {
+                Some(args) => Expr::apply(id, args),
+                None => Expr::Ident(id),
+            });
+        let unary_op = choice(((token(Token::Minus)).map(|_| UnaryOperator::Minus),
+                               (token(Token::BitNot)).map(|_| UnaryOperator::BitNot)));
+        let negated = || unary_op.and(factor()).map(|(op, e)| Expr::unary(op, e));
+        choice((
+            between(token(Token::LParen), token(Token::RParen), expr()),
+            arg_ref(),
+            ident_or_call(),
+            literal(),
+            negated(),
+        ))
+    }
+}
+
+fn binary_op<'a, I>(
+    p: impl Parser<I, Output = BinaryOperator>,
+) -> impl Parser<I, Output = impl Fn(Expr, Expr) -> Expr>
+where
+    I: Stream<Token = Token<'a>>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     p.map(|op| move |e1, e2| Expr::binary(op, e1, e2))
 }
 
-fn expr_<I>() -> impl Parser<Input = I, Output = Expr>
-where
-    I: Stream<Item = char>,
-    I::Error: ParseError<char, I::Range, I::Position>,
-{
-    use self::BinaryOperator::*;
-
-    let term_op = binary_op(choice((char('*').map(|_| Multiply),
-                                    char('/').map(|_| Divide),
-                                    char('%').map(|_| Modulo))));
-    let arith_op = binary_op(choice((char('+').map(|_| Add),
-                                     char('-').map(|_| Subtract))));
-    let shift_op = binary_op(choice((r#try(string("<<")).map(|_| ShiftLeft),
-                                     r#try(string(">>")).map(|_| ShiftRight))));
-    let cmp_op = binary_op(choice((string("==").map(|_| Equals),
-                                   string("!=").map(|_| NotEquals),
-                                   char('>').map(|_| GreaterThan),
-                                   char('<').map(|_| LessThan))));
-    let bit_op = binary_op(choice((char('&').map(|_| BitAnd),
-                                   char('^').map(|_| BitXor),
-                                   char('|').map(|_| BitOr))));
-    let assign_expr = ident().skip(hspace())
-        .skip(lex_char('='))
-        .and(expr())
-        .map(|(ident, e)| Expr::assign(ident, e));
-    let post_inc = ident().skip(lex_char('+')).map(Expr::post_inc);
-    let term = chainl1(factor(), term_op);
-    let arith_expr = chainl1(term, arith_op);
-    let shift_expr = chainl1(arith_expr, shift_op);
-    let cmp_expr = chainl1(shift_expr, cmp_op);
-    let bit_expr = chainl1(cmp_expr, bit_op);
-    let logical_and_expr = chainl1(bit_expr, binary_op(r#try(string("&&")).map(|_| LogicalAnd)));
-    let logical_or_expr = chainl1(logical_and_expr, binary_op(r#try(string("||")).map(|_| LogicalOr)));
-    choice((r#try(assign_expr), r#try(logical_or_expr), post_inc))
-}
-
-parser!{
-    fn expr[I]()(I) -> Expr
+parser! {
+    fn expr['a, I]()(I) -> Expr
     where [
-        I: Stream<Item = char>,
-        I::Error: ParseError<char, I::Range, I::Position>,
+        I: Stream<Token = Token<'a>>,
+        I::Error: ParseError<I::Token, I::Range, I::Position>,
     ]
     {
-        expr_()
+        use self::BinaryOperator::*;
+
+        let term_op = binary_op(choice((token(Token::Star).map(|_| Multiply),
+                                        token(Token::Slash).map(|_| Divide),
+                                        token(Token::Mod).map(|_| Modulo))));
+        let arith_op = binary_op(choice((token(Token::Plus).map(|_| Add),
+                                         token(Token::Minus).map(|_| Subtract))));
+        let shift_op = binary_op(choice((token(Token::ShiftLeft).map(|_| ShiftLeft),
+                                         token(Token::ShiftRight).map(|_| ShiftRight))));
+        let cmp_op = binary_op(choice((token(Token::Equals).map(|_| Equals),
+                                       token(Token::NotEquals).map(|_| NotEquals),
+                                       token(Token::Greater).map(|_| GreaterThan),
+                                       token(Token::Less).map(|_| LessThan))));
+        let bit_op = binary_op(choice((token(Token::BitAnd).map(|_| BitAnd),
+                                       token(Token::BitXor).map(|_| BitXor),
+                                       token(Token::BitOr).map(|_| BitOr))));
+        let assign_expr = ident().skip(token(Token::Assign))
+            .and(expr())
+            .map(|(ident, e)| Expr::assign(ident, e));
+        let post_inc = ident().skip(token(Token::Plus)).map(Expr::post_inc);
+        let term = chainl1(factor(), term_op);
+        let arith_expr = chainl1(term, arith_op);
+        let shift_expr = chainl1(arith_expr, shift_op);
+        let cmp_expr = chainl1(shift_expr, cmp_op);
+        let bit_expr = chainl1(cmp_expr, bit_op);
+        let logical_and_expr = chainl1(bit_expr, binary_op(token(Token::LogicalAnd).map(|_| LogicalAnd)));
+        let logical_or_expr = chainl1(logical_and_expr, binary_op(token(Token::LogicalOr).map(|_| LogicalOr)));
+        choice((attempt(assign_expr), attempt(logical_or_expr), post_inc))
     }
 }
+
+// parser! {
+//     fn expr['a, I]()(I) -> Expr
+//     where [
+//         I: Stream<Item = Token<'a>>,
+//         I::Error: ParseError<I::Item, I::Range, I::Position>,
+//     ]
+//     {
+//         expr_()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use combine::{easy, EasyParser};
 
-    #[test]
-    fn test_hspace() {
-        assert_eq!(hspace().easy_parse("").expect("parsing failed"),
-                   ((), ""));
-        assert_eq!(hspace().easy_parse("\n").expect("parsing failed"),
-                   ((), "\n"));
-        assert_eq!(hspace().easy_parse("\t  \n").expect("parsing failed"),
-                   ((), "\n"));
+    use super::*;
+    use crate::lexer;
+
+    #[derive(Debug)]
+    enum Error {
+        Parse,
+        Lex,
     }
 
-    #[test]
-    fn test_vspace() {
-        assert_eq!(vspace().easy_parse("\n").expect("parsing failed"),
-                   ((), ""));
-        assert_eq!(vspace().easy_parse("\n; A comment with EOL\n").expect("parsing failed"),
-                   ((), ""));
-        assert_eq!(vspace().easy_parse("\n; A comment with EOL\n  ").expect("parsing failed"),
-                   ((), ""));
+    fn lex<'a>(input: &'a str) -> Result<Vec<Token<'a>>, Error> {
+        let (tokens, rest): (Vec<Token<'a>>, _) = lexer::tokens()
+            .easy_parse(input.as_bytes())
+            .map_err(|_| Error::Lex)?;
+        assert!(rest.len() == 0);
+        Ok(tokens)
+    }
+
+    fn parse<'a, 'b, Output, P>(tokens: &'b [Token<'a>], mut p: P) -> Result<Output, Error>
+    where
+        P: Parser<easy::Stream<&'b [Token<'a>]>, Output = Output>,
+        Output: 'a + 'b, //P::Error: ParseError<Token<'a>, &'b [Token<'a>], stream::PointerOffset>,
+    {
+        let (result, rest) = p.easy_parse(tokens).map_err(|_| Error::Parse)?;
+        assert!(rest.len() == 0);
+        Ok(result)
     }
 
     #[test]
     fn test_ident() {
-        assert_eq!(ident().easy_parse("TEST").expect("parsing failed"),
-                   ("TEST".into(), ""));
-        assert_eq!(ident().easy_parse("TEST123").expect("parsing failed"),
-                   ("TEST123".into(), ""));
-        assert_eq!(ident().easy_parse("TEST_123_bar").expect("parsing failed"),
-                   ("TEST_123_bar".into(), ""));
-        assert_eq!(ident().easy_parse("_TEST_123_bar").expect("parsing failed"),
-                   ("_TEST_123_bar".into(), ""));
+        for input in &["TEST", "TEST123", "TEST_123_bar", "_TEST_123_bar"] {
+            assert_eq!(
+                parse(&lex(input).expect("lexing failed"), ident()).expect("parsing failed"),
+                input.to_string()
+            );
+        }
     }
 
     #[test]
     fn test_arg_ref() {
-        assert_eq!(expr().easy_parse("@42").expect("parsing failed"),
-                   (Expr::ArgRef(42), ""));
+        let tokens = lex("@42").expect("lexing failed");
+        assert_eq!(
+            parse(&tokens, expr()).expect("parsing failed"),
+            Expr::ArgRef(42)
+        );
     }
 
     #[test]
     fn test_logical_and() {
-        assert_eq!(expr().easy_parse("a && b").expect("parsing failed"),
-                   (Expr::ArgRef(42), ""));
+        assert_eq!(
+            parse(&lex("a && b").expect("lexing failed"), expr()).expect("parsing failed"),
+            Expr::Binary(
+                BinaryOperator::LogicalAnd,
+                Box::new(Expr::ident("a")),
+                Box::new(Expr::ident("b"))
+            )
+        );
     }
 
     #[test]
     fn test_logical_or() {
-        assert_eq!(expr().easy_parse("a || b").expect("parsing failed"),
-                   (Expr::ArgRef(42), ""));
+        assert_eq!(
+            parse(&lex("a || b").expect("lexing failed"), expr()).expect("parsing failed"),
+            Expr::Binary(
+                BinaryOperator::LogicalOr,
+                Box::new(Expr::ident("a")),
+                Box::new(Expr::ident("b"))
+            )
+        );
     }
 
     #[test]
     fn test_directive() {
-        let (commands, rest): (Vec<_>, _) = file().easy_parse(
-            concat!(".device ATmega8\n",
-                    ".org 0\n",
-                    ".db 1, 2\n",
-                    ".db \"Hello\", 32, \"World\"\n")).expect("parsing failed");
-        assert_eq!(commands, vec![
-            Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
-            Item::Directive("org".into(), vec![Expr::Int(0)]),
-            Item::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)]),
-            Item::Directive("db".into(), vec![
-                Expr::String("Hello".into()),
-                Expr::Int(32),
-                Expr::String("World".into())],
-            ),
-        ]);
-        assert_eq!(rest, "");
+        let tokens = lex(concat!(
+            ".device ATmega8\n",
+            ".org 0\n",
+            ".db 1, 2\n",
+            ".db \"Hello\", 32, \"World\"\n"
+        ))
+        .expect("lexing failed");
+        let commands: Vec<_> = parse(&tokens, file()).expect("parsing failed");
+        assert_eq!(
+            commands,
+            vec![
+                Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
+                Item::Directive("org".into(), vec![Expr::Int(0)]),
+                Item::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)]),
+                Item::Directive(
+                    "db".into(),
+                    vec![
+                        Expr::String("Hello".into()),
+                        Expr::Int(32),
+                        Expr::String("World".into())
+                    ],
+                ),
+            ]
+        );
     }
 
     #[test]
     fn test_file_eof() {
-        assert_eq!(file().easy_parse(concat!(".device ATmega8\n",
-                                             ".db 1, 2")).expect("parsing failed"),
-                   (vec![
-                       Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
-                       Item::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)])
-                   ],
-                    ""));
+        let tokens = lex(concat!(".device ATmega8\n", ".db 1, 2")).expect("lexing failed");
+        assert_eq!(
+            parse(&tokens, file()).expect("parsing failed"),
+            vec![
+                Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
+                Item::Directive("db".into(), vec![Expr::Int(1), Expr::Int(2)])
+            ]
+        );
     }
 
     #[test]
     fn test_directive_if() {
-        let (commands, rest): (Vec<_>, _) = file().easy_parse(
-            ".if (pc>FLASHEND)\n").expect("parsing failed");
-        assert_eq!(commands, vec![
-            Item::Directive("if".into(),
-                               vec![Expr::greater_than(Expr::ident("pc"),
-                                                       Expr::ident("FLASHEND"))]),
-        ]);
-        assert_eq!(rest, "");
+        let tokens = lex(".if (pc>FLASHEND)\n").expect("lexing failed");
+        let commands: Vec<_> = parse(&tokens, file()).expect("parsing failed");
+        assert_eq!(
+            commands,
+            vec![Item::Directive(
+                "if".into(),
+                vec![Expr::greater_than(
+                    Expr::ident("pc"),
+                    Expr::ident("FLASHEND")
+                )]
+            ),]
+        );
     }
 
     #[test]
     fn test_directive_if_arg_ref() {
-        assert_eq!(file().easy_parse(".if (@0-pc > 2040) || (pc-@0>2040)\n").expect("parsing failed"),
-                   (vec![
-                       Item::Directive("if".into(),
-                                       vec![Expr::logical_or(Expr::greater_than(Expr::subtract(Expr::ArgRef(0), Expr::ident("pc")),
-                                                                                Expr::Int(2040)),
-                                                             Expr::greater_than(Expr::subtract(Expr::ident("pc"), Expr::ArgRef(0)),
-                                                                           Expr::Int(2040)))])
-                   ],
-                    ""));
+        let tokens = lex(".if (@0-pc > 2040) || (pc-@0>2040)\n").expect("lexing failed");
+        assert_eq!(
+            parse(&tokens, file()).expect("parsing failed"),
+            vec![Item::Directive(
+                "if".into(),
+                vec![Expr::logical_or(
+                    Expr::greater_than(
+                        Expr::subtract(Expr::ArgRef(0), Expr::ident("pc")),
+                        Expr::Int(2040)
+                    ),
+                    Expr::greater_than(
+                        Expr::subtract(Expr::ident("pc"), Expr::ArgRef(0)),
+                        Expr::Int(2040)
+                    )
+                )]
+            )]
+        );
     }
 
     #[test]
     fn test_directive_set() {
-        let (commands, rest): (Vec<_>, _) = file().easy_parse(
-            ".set AMFORTH_NRWW_SIZE=(FLASHEND-AMFORTH_RO_SEG)*2\n").expect("parsing failed");
-        assert_eq!(commands, vec![
-            Item::Directive("set".into(),
-                               vec![Expr::assign("AMFORTH_NRWW_SIZE",
-                                                 Expr::multiply(Expr::subtract(Expr::ident("FLASHEND"),
-                                                                               Expr::ident("AMFORTH_RO_SEG")),
-                                                                Expr::Int(2)))]),
-        ]);
-        assert_eq!(rest, "");
+        let commands: Vec<_> = parse(
+            &lex(".set AMFORTH_NRWW_SIZE=(FLASHEND-AMFORTH_RO_SEG)*2\n").expect("lexing failed"),
+            file(),
+        )
+        .expect("parsing failed");
+        assert_eq!(
+            commands,
+            vec![Item::Directive(
+                "set".into(),
+                vec![Expr::assign(
+                    "AMFORTH_NRWW_SIZE",
+                    Expr::multiply(
+                        Expr::subtract(Expr::ident("FLASHEND"), Expr::ident("AMFORTH_RO_SEG")),
+                        Expr::Int(2)
+                    )
+                )]
+            ),]
+        );
     }
 
     #[test]
     fn test_comment() {
-        let (commands, rest): (Vec<_>, _) = file().easy_parse(
-            concat!("; A comment at the start\n",
-                    ".device ATmega8 ; A comment\n",
-                    ".org 0 ; This is the interrupt vector address\n",
-                    "; This is a line with just a comment\n")).expect("parsing failed");
-        assert_eq!(commands, vec![
-            Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
-            Item::Directive("org".into(), vec![Expr::Int(0)]),
-        ]);
-        assert_eq!(rest, "");
+        let tokens = lex(concat!(
+            "; A comment at the start\n",
+            ".device ATmega8 ; A comment\n",
+            ".org 0 ; This is the interrupt vector address\n",
+            "; This is a line with just a comment\n"
+        ))
+        .expect("lexing failed");
+        let commands: Vec<_> = parse(&tokens, file()).expect("parsing failed");
+        assert_eq!(
+            commands,
+            vec![
+                Item::Directive("device".into(), vec![Expr::ident("ATmega8")]),
+                Item::Directive("org".into(), vec![Expr::Int(0)]),
+            ]
+        );
     }
 
     #[test]
     fn test_instruction() {
-        let (commands, rest): (Vec<_>, _) = file().easy_parse(
-            concat!("ldi R16, ';'\n",
-                    "ldi R16, 0x3b\n")).expect("parsing failed");
-        assert_eq!(commands, vec![
-            Item::Instruction("ldi".into(),
-                                   vec![Expr::ident("R16"), Expr::Char(';')]),
-            Item::Instruction("ldi".into(),
-                                   vec![Expr::ident("R16"), Expr::Int(0x3b)]),
-        ]);
-        assert_eq!(rest, "");
+        let tokens = lex(concat!("ldi R16, ';'\n", "ldi R16, 0x3b\n")).expect("lexing failed");
+        let commands: Vec<_> = parse(&tokens, file()).expect("parsing failed");
+        assert_eq!(
+            commands,
+            vec![
+                Item::Instruction("ldi".into(), vec![Expr::ident("R16"), Expr::Char(b';')]),
+                Item::Instruction("ldi".into(), vec![Expr::ident("R16"), Expr::Int(0x3b)]),
+            ]
+        );
     }
 
     #[test]
     fn test_label() {
-        let (commands, rest): (Vec<_>, _) = file().easy_parse(
-            concat!("FOO: .byte 2\n",
-                    "BAR: ldi R16, 0\n")).expect("parsing failed");
-        assert_eq!(commands, vec![
-            Item::Label("FOO".into()),
-            Item::Directive("byte".into(), vec![Expr::Int(2)]),
-            Item::Label("BAR".into()),
-            Item::Instruction("ldi".into(), vec![Expr::ident("R16"), Expr::Int(0)]),
-        ]);
-        assert_eq!(rest, "");
+        let tokens = lex(concat!("FOO: .byte 2\n", "BAR: ldi R16, 0\n")).expect("lexing failed");
+        let commands: Vec<_> = parse(&tokens, file()).expect("parsing failed");
+        assert_eq!(
+            commands,
+            vec![
+                Item::Label("FOO".into()),
+                Item::Directive("byte".into(), vec![Expr::Int(2)]),
+                Item::Label("BAR".into()),
+                Item::Instruction("ldi".into(), vec![Expr::ident("R16"), Expr::Int(0)]),
+            ]
+        );
     }
 
     #[test]
     fn test_expr_basic() {
-        assert_eq!(expr().easy_parse("TEST + 42 * foo").expect("parsing failed"),
-                   (Expr::add(Expr::ident("TEST"),
-                              Expr::multiply(Expr::Int(42), Expr::ident("foo"))),
-                    ""));
-        assert_eq!(expr().easy_parse("TEST / 42 - foo").expect("parsing failed"),
-                   (Expr::subtract(Expr::divide(Expr::ident("TEST"), Expr::Int(42)),
-                                   Expr::ident("foo")),
-                    ""));
+        assert_eq!(
+            parse(&lex("TEST + 42 * foo").expect("lexing failed"), expr()).expect("parsing failed"),
+            Expr::add(
+                Expr::ident("TEST"),
+                Expr::multiply(Expr::Int(42), Expr::ident("foo"))
+            )
+        );
+        assert_eq!(
+            parse(&lex("TEST / 42 - foo").expect("lexing failed"), expr()).expect("parsing failed"),
+            Expr::subtract(
+                Expr::divide(Expr::ident("TEST"), Expr::Int(42)),
+                Expr::ident("foo")
+            )
+        );
     }
 
     #[test]
     fn test_expr_minus() {
-        assert_eq!(expr().easy_parse("-42").expect("parsing failed"),
-                   (Expr::minus(Expr::Int(42)),
-                    ""));
-        assert_eq!(expr().easy_parse("-42 * foo").expect("parsing failed"),
-                   (Expr::multiply(Expr::minus(Expr::Int(42)), Expr::ident("foo")),
-                    ""));
-        assert_eq!(expr().easy_parse("TEST + 42 * -foo").expect("parsing failed"),
-                   (Expr::add(Expr::ident("TEST"),
-                              Expr::multiply(Expr::Int(42), Expr::minus(Expr::ident("foo")))),
-                    ""));
+        assert_eq!(
+            parse(&lex("-42").unwrap(), expr()).expect("parsing failed"),
+            Expr::minus(Expr::Int(42))
+        );
+        assert_eq!(
+            parse(&lex("-42 * foo").unwrap(), expr()).expect("parsing failed"),
+            Expr::multiply(Expr::minus(Expr::Int(42)), Expr::ident("foo"))
+        );
+        assert_eq!(
+            parse(&lex("TEST + 42 * -foo").unwrap(), expr()).expect("parsing failed"),
+            Expr::add(
+                Expr::ident("TEST"),
+                Expr::multiply(Expr::Int(42), Expr::minus(Expr::ident("foo")))
+            )
+        );
     }
 
     #[test]
     fn test_expr_postinc() {
-        assert_eq!(expr().easy_parse("Z+").expect("parsing failed"),
-                   (Expr::post_inc("Z"),
-                    ""));
+        assert_eq!(
+            parse(&lex("Z+").unwrap(), expr()).expect("parsing failed"),
+            Expr::post_inc("Z")
+        );
     }
 
     #[test]
     fn test_expr_parens() {
-        assert_eq!(expr().easy_parse("(TEST + 42) * foo").expect("parsing failed"),
-                   (Expr::multiply(Expr::add(Expr::ident("TEST"), Expr::Int(42)),
-                                   Expr::ident("foo")),
-                    ""));
-        assert_eq!(expr().easy_parse("TEST / (42 - foo)").expect("parsing failed"),
-                   (Expr::divide(Expr::ident("TEST"),
-                                 Expr::subtract(Expr::Int(42), Expr::ident("foo"))),
-                    ""));
+        assert_eq!(
+            parse(&lex("(TEST + 42) * foo").unwrap(), expr()).expect("parsing failed"),
+            Expr::multiply(
+                Expr::add(Expr::ident("TEST"), Expr::Int(42)),
+                Expr::ident("foo")
+            )
+        );
+        assert_eq!(
+            parse(&lex("TEST / (42 - foo)").unwrap(), expr()).expect("parsing failed"),
+            Expr::divide(
+                Expr::ident("TEST"),
+                Expr::subtract(Expr::Int(42), Expr::ident("foo"))
+            )
+        );
     }
 
     #[test]
     fn test_expr_cmp() {
-        assert_eq!(expr().easy_parse("(TEST < 42 * foo)").expect("parsing failed"),
-                   (Expr::less_than(Expr::ident("TEST"),
-                                    Expr::multiply(Expr::Int(42), Expr::ident("foo"))),
-                    ""));
+        assert_eq!(
+            parse(&lex("(TEST < 42 * foo)").unwrap(), expr()).expect("parsing failed"),
+            Expr::less_than(
+                Expr::ident("TEST"),
+                Expr::multiply(Expr::Int(42), Expr::ident("foo"))
+            )
+        );
     }
 
     #[test]
     fn test_expr_equals() {
-        assert_eq!(expr().easy_parse("(TEST + 42) == foo").expect("parsing failed"),
-                   (Expr::equals(Expr::add(Expr::ident("TEST"), Expr::Int(42)),
-                                 Expr::ident("foo")),
-                    ""));
+        assert_eq!(
+            parse(&lex("(TEST + 42) == foo").unwrap(), expr()).expect("parsing failed"),
+            Expr::equals(
+                Expr::add(Expr::ident("TEST"), Expr::Int(42)),
+                Expr::ident("foo")
+            )
+        );
     }
 
     #[test]
     fn test_expr_apply() {
-        assert_eq!(expr().easy_parse("foo (TEST + 42, 23) * bar").expect("parsing failed"),
-                   (Expr::multiply(
-                       Expr::apply("foo",
-                                   vec![Expr::add(Expr::ident("TEST"), Expr::Int(42)),
-                                        Expr::Int(23)]),
-                       Expr::ident("bar")),
-                    ""));
+        assert_eq!(
+            parse(&lex("foo (TEST + 42, 23) * bar").unwrap(), expr()).expect("parsing failed"),
+            Expr::multiply(
+                Expr::apply(
+                    "foo",
+                    vec![Expr::add(Expr::ident("TEST"), Expr::Int(42)), Expr::Int(23)]
+                ),
+                Expr::ident("bar")
+            )
+        );
     }
 
     #[test]
     fn test_expr_assign() {
-        assert_eq!(expr().easy_parse("foo = (TEST + 42) * bar").expect("parsing failed"),
-                   (Expr::assign("foo",
-                                 Expr::multiply(
-                                     Expr::add(Expr::ident("TEST"), Expr::Int(42)),
-                                     Expr::ident("bar"))),
-                    ""));
-
-        assert_eq!(expr().easy_parse("AMFORTH_NRWW_SIZE=(FLASHEND-AMFORTH_RO_SEG)*2").expect("parsing failed"),
-                   (Expr::assign("AMFORTH_NRWW_SIZE",
-                                 Expr::multiply(
-                                     Expr::subtract(Expr::ident("FLASHEND"),
-                                                    Expr::ident("AMFORTH_RO_SEG")),
-                                     Expr::Int(2))),
-                    ""));
+        assert_eq!(
+            parse(&lex("foo = (TEST + 42) * bar").unwrap(), expr()).expect("parsing failed"),
+            Expr::assign(
+                "foo",
+                Expr::multiply(
+                    Expr::add(Expr::ident("TEST"), Expr::Int(42)),
+                    Expr::ident("bar")
+                )
+            )
+        );
+        assert_eq!(
+            parse(
+                &lex("AMFORTH_NRWW_SIZE=(FLASHEND-AMFORTH_RO_SEG)*2").unwrap(),
+                expr()
+            )
+            .expect("parsing failed"),
+            Expr::assign(
+                "AMFORTH_NRWW_SIZE",
+                Expr::multiply(
+                    Expr::subtract(Expr::ident("FLASHEND"), Expr::ident("AMFORTH_RO_SEG")),
+                    Expr::Int(2)
+                )
+            )
+        );
     }
 }

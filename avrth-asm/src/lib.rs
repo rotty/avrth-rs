@@ -6,4 +6,5 @@ extern crate combine;
 extern crate failure;
 
 pub mod avr_asm;
+pub mod lexer;
 pub mod parser;
