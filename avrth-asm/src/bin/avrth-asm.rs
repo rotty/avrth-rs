@@ -2,11 +2,13 @@
 
 use avrth_asm::avr_asm::{self, Assembler};
 use avrth_asm::parser::{self, Item};
+use avrth_asm::lexer;
 
 use combine::Parser;
 use combine::stream::IteratorStream;
 use combine::stream::buffered::BufferedStream;
 use combine::stream::state::State;
+use combine::stream::{easy, PointerOffset};
 use failure::{format_err, Error, ResultExt};
 use structopt::StructOpt;
 
@@ -63,12 +65,18 @@ impl Asm {
         let file = self.open_file(true, filename)?;
         let mut reader = BufReader::new(file);
         // TODO: Reading the whole file into memory is kinda suboptimal
-        let mut input = String::new();
-        reader.read_to_string(&mut input)?;
-        let input = BufferedStream::new(State::new(IteratorStream::new(input.chars())), 128);
-        let (items, _rest): (Vec<_>, _) = parser::file().easy_parse(input).with_context(|e| {
-            format!("error parsing {}", filename.display())
+        let mut input : Vec<u8> = vec![];
+        reader.read_to_end(&mut input)?;
+        //let input = BufferedStream::new(State::new(IteratorStream::new()), 128);
+        let (tokens, rest) : (Vec<lexer::Token>, _) = lexer::tokens().easy_parse(&input[..]).map_err(|e| {
+            format_err!("{}:{}: lexer error", filename.display(), e.position)
         })?;
+        if !rest.is_empty() {
+            let token: String = String::from_utf8_lossy(rest).chars().take(5).collect();
+            return Err(format_err!("{}: unexpected token: {}", filename.display(), token));
+        }
+        dbg!(&tokens);
+        let (items, _): (Vec<parser::Item>, _) = parser::file().easy_parse(tokens.as_slice()).map_err(parse_error)?;
         for item in items {
             println!("{:?}", item);
             match item {
@@ -151,4 +159,10 @@ impl<'a> fmt::Display for SearchPath<'a> {
         }
         Ok(())
     }
+}
+
+type ParseError<'a> = easy::Errors<lexer::Token<'a>, &'a [lexer::Token<'a>], PointerOffset>;
+
+fn parse_error(e: ParseError) -> Error {
+    format_err!("parse error at {}", e.position)
 }
