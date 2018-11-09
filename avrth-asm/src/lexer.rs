@@ -8,13 +8,17 @@ use combine::{any, between, chainl1, choice, eof, many, many1, none_of, optional
 use std::str;
 use std::string::FromUtf8Error;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token<'a> {
     Directive(&'a str),
     Ident(&'a str),
     Str(String),
     Int(i64),
     Char(u8),
+    Eol,
+    Colon,
+    Comma,
+    Assign,
     At,
     Plus,
     Minus,
@@ -98,6 +102,9 @@ where
         byte(b'%').map(|_| Token::Mod),
         byte(b'&').map(|_| Token::BitAnd),
         byte(b'|').map(|_| Token::BitOr),
+        byte(b',').map(|_| Token::Comma),
+        byte(b'=').map(|_| Token::Assign),
+        byte(b':').map(|_| Token::Colon),
     ))
 }
 
@@ -180,10 +187,10 @@ mod tests {
     #[test]
     fn test_arithmetic_operators() {
         use super::Token::*;
-        assert_eq!(parse_tokens("++-*/%"),
-                   vec![Plus, Plus, Minus, Star, Slash, Mod]);
-        assert_eq!(parse_tokens("+ + - * / %"),
-                   vec![Plus, Plus, Minus, Star, Slash, Mod]);
+        assert_eq!(parse_tokens("++-*/%,"),
+                   vec![Plus, Plus, Minus, Star, Slash, Mod, Comma]);
+        assert_eq!(parse_tokens("+ + - * / % ,"),
+                   vec![Plus, Plus, Minus, Star, Slash, Mod, Comma]);
     }
 
     #[test]
