@@ -5,6 +5,7 @@ use combine::range::{range, recognize};
 use combine::parser::repeat::skip_until;
 use combine::{any, between, chainl1, choice, eof, many, many1, none_of, optional, satisfy, sep_by, skip_many, skip_many1, r#try as try_, Parser};
 
+use std::fmt;
 use std::str;
 use std::string::FromUtf8Error;
 
@@ -16,6 +17,8 @@ pub enum Token<'a> {
     Int(i64),
     Char(u8),
     Eol,
+    LParen,
+    RParen,
     Colon,
     Comma,
     Assign,
@@ -33,11 +36,51 @@ pub enum Token<'a> {
     Greater,
     LessOrEqual,
     GreaterOrEqual,
+    BitNot,
     BitAnd,
     BitOr,
     BitXor,
     LogicalAnd,
     LogicalOr,
+}
+
+impl<'a> fmt::Display for Token<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        use self::Token::*;
+        match self {
+            Directive(s) => write!(f, ".{}", s),
+            Ident(s) => write!(f, "{}", s),
+            Str(s) => write!(f, r#""{}""#, s),
+            Int(n) => write!(f, "{}", n),
+            Char(c) => write!(f, "'{}'", c),
+            Eol => f.write_str("EOL"),
+            LParen => f.write_str("("),
+            RParen => f.write_str(")"),
+            Colon => f.write_str(":"),
+            Comma => f.write_str(","),
+            Assign => f.write_str("="),
+            At => f.write_str("@"),
+            Plus => f.write_str("+"),
+            Minus => f.write_str("-"),
+            Star => f.write_str("*"),
+            Slash => f.write_str("/"),
+            Mod => f.write_str("%"),
+            ShiftLeft => f.write_str("<<"),
+            ShiftRight => f.write_str(">>"),
+            Equals => f.write_str("=="),
+            NotEquals => f.write_str("!="),
+            Less => f.write_str("<"),
+            Greater => f.write_str(">"),
+            LessOrEqual => f.write_str("<="),
+            GreaterOrEqual => f.write_str(">="),
+            BitNot => f.write_str("~"),
+            BitAnd => f.write_str("&"),
+            BitOr => f.write_str("|"),
+            BitXor => f.write_str("^"),
+            LogicalAnd => f.write_str("&&"),
+            LogicalOr => f.write_str("||"),
+        }
+    }
 }
 
 fn is_hspace(c: u8) -> bool {

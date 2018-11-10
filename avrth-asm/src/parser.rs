@@ -6,7 +6,7 @@ use combine::{any, between, chainl1, choice, eof, many, many1, none_of, optional
 
 use crate::lexer::Token;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Item {
     Directive(String, Vec<Expr>),
     Instruction(String, Vec<Expr>),
@@ -40,11 +40,11 @@ pub enum UnaryOperator {
     LogicalNot,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expr {
     Ident(String),
     String(String),
-    Char(char),
+    Char(u8),
     Int(i64),
     ArgRef(i64),
     Binary(BinaryOperator, Box<Expr>, Box<Expr>),
@@ -109,44 +109,50 @@ parser! {
         I::Error: ParseError<I::Item, I::Range, I::Position>,
     ]
     {
-        sep_by(expr(), Token::Assign)
+        sep_by(expr(), token(Token::Comma))
     }
 }
 
 struct Line(Option<String>, Option<Item>);
 
-pub fn ident<'a, I>() -> impl Parser<Input = I, Output = String>
-where
-    I: Stream<Item = Token<'a>>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    satisfy_map(|t| match t {
-        Token::Directive(name) => Some(name.to_string()),
-        _ => None,
-    })
+parser! {
+    pub fn ident['a, I]()(I) -> String
+    where [
+        I: Stream<Item = Token<'a>>,
+        I::Error: ParseError<I::Item, I::Range, I::Position>,
+    ]
+    {
+        satisfy_map(|t| match t {
+            Token::Directive(name) => Some(name.to_string()),
+            _ => None,
+        })
+    }
 }
 
-pub fn line<'a, I>() -> impl Parser<Input = I, Output = Line>
-where
-    I: Stream<Item = Token<'a>>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    let directive = satisfy_map(|t| match t {
-        Token::Directive(name) => Some(name),
-        _ => None,
-    }).and(comma_list());
-    let instruction = satisfy_map(|t| match t {
-        Token::Ident(name) => Some(name),
-        _ => None
-    }).and(comma_list());
-    let label = satisfy_map(|t| match t {
-        Token::Ident(name) => Some(name),
-        _ => None
-    }).skip(token(Token::Colon));
-    optional(try_(label)).and(optional(choice((
-        directive.map(|(name, args)| Item::Directive(name.into(), args)),
-        instruction.map(|(name, args)| Item::Instruction(name.into(), args)),
-    )))).map(|(label, stmt)| Line(label.map(|s| s.into()), stmt))
+parser! {
+    fn line['a, I]()(I) -> Line
+    where [
+        I: Stream<Item = Token<'a>>,
+        I::Error: ParseError<I::Item, I::Range, I::Position>,
+    ]
+    {
+        let directive = satisfy_map(|t| match t {
+            Token::Directive(name) => Some(name),
+            _ => None,
+        }).and(comma_list());
+        let instruction = satisfy_map(|t| match t {
+            Token::Ident(name) => Some(name),
+            _ => None
+        }).and(comma_list());
+        let label = satisfy_map(|t| match t {
+            Token::Ident(name) => Some(name),
+            _ => None
+        }).skip(token(Token::Colon));
+        optional(try_(label)).and(optional(choice((
+            directive.map(|(name, args)| Item::Directive(name.into(), args)),
+            instruction.map(|(name, args)| Item::Instruction(name.into(), args)),
+        )))).map(|(label, stmt)| Line(label.map(|s| s.into()), stmt))
+    }
 }
 
 impl Extend<Line> for Vec<Item> {
@@ -165,12 +171,15 @@ impl Extend<Line> for Vec<Item> {
     }
 }
 
-pub fn file<'a, I>() -> impl Parser<Input = I, Output = Vec<Item>>
-where
-    I: Stream<Item = Token<'a>>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    sep_by(line(), vspace()).skip(eof())
+parser! {
+    pub fn file['a, I]()(I) -> Vec<Item>
+    where [
+        I: Stream<Item = Token<'a>>,
+        I::Error: ParseError<I::Item, I::Range, I::Position>,
+    ]
+    {
+        sep_by(line(), vspace()).skip(eof())
+    }
 }
 
 fn vspace<'a, I>() -> impl Parser<Input = I, Output = ()>
@@ -181,35 +190,12 @@ where
     skip_many1(token(Token::Eol))
 }
 
-fn factor_<'a, I>() -> impl Parser<Input = I, Output = Expr>
-where
-    I: Stream<Item = Token<'a>>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    let string_literal = || between(char('"'), char('"'), many(escaped_char(&['"'])));
-    let char_literal = || between(char('\''), char('\''), escaped_char(&['\'']));
-    let arg_ref = || char('@').with(int_literal());
-    let literal = || choice((
-        arg_ref().map(Expr::ArgRef),
-        int_literal().map(Expr::Int),
-        string_literal().map(Expr::String),
-        char_literal().map(Expr::Char),
-    ));
-    let ident_or_call = || (ident().skip(hspace()), optional(between(char('('), char(')'), comma_list())))
-        .map(|(id, args)| match args {
-            Some(args) => Expr::apply(id, args),
-            None => Expr::Ident(id),
-        });
-    let unary_op = choice(((char('-')).map(|_| UnaryOperator::Minus),
-                           (char('~')).map(|_| UnaryOperator::BitNot)));
-    let negated = || unary_op.and(factor()).map(|(op, e)| Expr::unary(op, e));
-    hspace().with(choice((
-        between(char('('), char(')'), expr()),
-        ident_or_call(),
-        literal(),
-        negated(),
-    ))).skip(hspace())
-}
+// fn factor_<'a, I>() -> impl Parser<Input = I, Output = Expr>
+// where
+//     I: Stream<Item = Token<'a>>,
+//     I::Error: ParseError<I::Item, I::Range, I::Position>,
+// {
+// }
 
 parser!{
     fn factor['a, I]()(I) -> Expr
@@ -218,7 +204,34 @@ parser!{
         I::Error: ParseError<I::Item, I::Range, I::Position>,
     ]
     {
-        factor_()
+        let arg_ref = || token(Token::At).with(satisfy_map(|t| match t {
+            Token::Int(n) => Some(Expr::ArgRef(n)),
+            _ => None,
+        }));
+        let literal = || satisfy_map(|t| match t {
+            Token::Int(n) => Some(Expr::Int(n)),
+            Token::Str(s) => Some(Expr::String(s)),
+            Token::Char(c) => Some(Expr::Char(c)),
+            _ => None,
+        });
+        let ident_or_call = || (ident(),
+                                optional(between(token(Token::LParen),
+                                                 token(Token::RParen),
+                                                 comma_list())))
+            .map(|(id, args)| match args {
+                Some(args) => Expr::apply(id, args),
+                None => Expr::Ident(id),
+            });
+        let unary_op = choice(((token(Token::Minus)).map(|_| UnaryOperator::Minus),
+                               (token(Token::BitNot)).map(|_| UnaryOperator::BitNot)));
+        let negated = || unary_op.and(factor()).map(|(op, e)| Expr::unary(op, e));
+        choice((
+            between(token(Token::LParen), token(Token::RParen), expr()),
+            arg_ref(),
+            ident_or_call(),
+            literal(),
+            negated(),
+        ))
     }
 }
 
@@ -230,51 +243,54 @@ where
     p.map(|op| move |e1, e2| Expr::binary(op, e1, e2))
 }
 
-fn expr_<'a, I>() -> impl Parser<Input = I, Output = Expr>
-where
-    I: Stream<Item = Token<'a>>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    use self::BinaryOperator::*;
-
-    let term_op = binary_op(choice((token(Token::Star).map(|_| Multiply),
-                                    token(Token::Slash).map(|_| Divide),
-                                    token(Token::Mod).map(|_| Modulo))));
-    let arith_op = binary_op(choice((token(Token::Plus).map(|_| Add),
-                                     token(Token::Minus).map(|_| Subtract))));
-    let shift_op = binary_op(choice((token(Token::ShiftLeft).map(|_| ShiftLeft),
-                                     token(Token::ShiftRight).map(|_| ShiftRight))));
-    let cmp_op = binary_op(choice((token(Token::Equals).map(|_| Equals),
-                                   token(Token::NotEquals).map(|_| NotEquals),
-                                   token(Token::Greater).map(|_| GreaterThan),
-                                   token(Token::Less).map(|_| LessThan))));
-    let bit_op = binary_op(choice((token(Token::BitAnd).map(|_| BitAnd),
-                                   token(Token::BitXor).map(|_| BitXor),
-                                   token(Token::BitOr).map(|_| BitOr))));
-    let assign_expr = ident().skip(token(Token::Assign))
-        .and(expr())
-        .map(|(ident, e)| Expr::assign(ident, e));
-    let post_inc = ident().skip(token(Token::Plus)).map(Expr::post_inc);
-    let term = chainl1(factor(), term_op);
-    let arith_expr = chainl1(term, arith_op);
-    let shift_expr = chainl1(arith_expr, shift_op);
-    let cmp_expr = chainl1(shift_expr, cmp_op);
-    let bit_expr = chainl1(cmp_expr, bit_op);
-    let logical_and_expr = chainl1(bit_expr, binary_op(try_(token("&&")).map(|_| LogicalAnd)));
-    let logical_or_expr = chainl1(logical_and_expr, binary_op(try_(token("||")).map(|_| LogicalOr)));
-    choice((try_(assign_expr), try_(logical_or_expr), post_inc))
-}
-
-parser!{
-    fn expr[I]()(I) -> Expr
+parser! {
+    fn expr['a, I]()(I) -> Expr
     where [
-        I: Stream<Item = char>,
-        I::Error: ParseError<char, I::Range, I::Position>,
+        I: Stream<Item = Token<'a>>,
+        I::Error: ParseError<I::Item, I::Range, I::Position>,
     ]
     {
-        expr_()
+        use self::BinaryOperator::*;
+
+        let term_op = binary_op(choice((token(Token::Star).map(|_| Multiply),
+                                        token(Token::Slash).map(|_| Divide),
+                                        token(Token::Mod).map(|_| Modulo))));
+        let arith_op = binary_op(choice((token(Token::Plus).map(|_| Add),
+                                         token(Token::Minus).map(|_| Subtract))));
+        let shift_op = binary_op(choice((token(Token::ShiftLeft).map(|_| ShiftLeft),
+                                         token(Token::ShiftRight).map(|_| ShiftRight))));
+        let cmp_op = binary_op(choice((token(Token::Equals).map(|_| Equals),
+                                       token(Token::NotEquals).map(|_| NotEquals),
+                                       token(Token::Greater).map(|_| GreaterThan),
+                                       token(Token::Less).map(|_| LessThan))));
+        let bit_op = binary_op(choice((token(Token::BitAnd).map(|_| BitAnd),
+                                       token(Token::BitXor).map(|_| BitXor),
+                                       token(Token::BitOr).map(|_| BitOr))));
+        let assign_expr = ident().skip(token(Token::Assign))
+            .and(expr())
+            .map(|(ident, e)| Expr::assign(ident, e));
+        let post_inc = ident().skip(token(Token::Plus)).map(Expr::post_inc);
+        let term = chainl1(factor(), term_op);
+        let arith_expr = chainl1(term, arith_op);
+        let shift_expr = chainl1(arith_expr, shift_op);
+        let cmp_expr = chainl1(shift_expr, cmp_op);
+        let bit_expr = chainl1(cmp_expr, bit_op);
+        let logical_and_expr = chainl1(bit_expr, binary_op(token(Token::LogicalAnd).map(|_| LogicalAnd)));
+        let logical_or_expr = chainl1(logical_and_expr, binary_op(token(Token::LogicalOr).map(|_| LogicalOr)));
+        choice((try_(assign_expr), try_(logical_or_expr), post_inc))
     }
 }
+
+// parser! {
+//     fn expr['a, I]()(I) -> Expr
+//     where [
+//         I: Stream<Item = Token<'a>>,
+//         I::Error: ParseError<I::Item, I::Range, I::Position>,
+//     ]
+//     {
+//         expr_()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
