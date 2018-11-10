@@ -18,4 +18,8 @@ avrth-asm = { version = "0.0.1", path = "avrth-asm" }
 [dev-dependencies]
 quickcheck = "0.7.1"
 
+[profile.release]
+codegen-units = 1
+lto = true
+
 [workspace]
