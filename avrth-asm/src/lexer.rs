@@ -190,12 +190,18 @@ where
     I: RangeStream<Item = u8, Range = &'a [u8]>,
     I::Error: ParseError<I::Item, I::Range, I::Position>,
 {
+    fn unit<T>(_: T) {}
     many(choice((
         ident_str().map(Token::Ident),
         int_token(),
         string_literal().map(Token::Str),
         char_literal().map(Token::Char),
         operator_token(),
+        hspace().with(choice((
+            try_(bytes(b"\r\n")).map(unit),
+            byte(b'\r').map(unit),
+            byte(b'\n').map(unit),
+        ))).map(|_| Token::Eol)
     )).skip(hspace()))
 }
 
@@ -207,6 +213,26 @@ mod tests {
         let (parsed, remainder) = tokens().easy_parse(input.as_bytes()).expect("unable to parse");
         assert_eq!(remainder, &b""[..]);
         parsed
+    }
+
+    #[test]
+    fn test_hspace() {
+        assert_eq!(hspace().easy_parse(&b""[..]).expect("parsing failed"),
+                   ((), "".as_bytes()));
+        assert_eq!(hspace().easy_parse(&b"\n"[..]).expect("parsing failed"),
+                   ((), "\n".as_bytes()));
+        assert_eq!(hspace().easy_parse(&b"\t  \n"[..]).expect("parsing failed"),
+                   ((), "\n".as_bytes()));
+    }
+
+    #[test]
+    fn test_vspace() {
+        assert_eq!(tokens().easy_parse(&b"\n"[..]).expect("parsing failed"),
+                   (vec![Token::Eol], "".as_bytes()));
+        assert_eq!(tokens().easy_parse(&b"\n; A comment with EOL\n"[..]).expect("parsing failed"),
+                   (vec![Token::Eol, Token::Eol], "".as_bytes()));
+        assert_eq!(tokens().easy_parse(&b"\n; A comment with EOL\n  "[..]).expect("parsing failed"),
+                   (vec![Token::Eol, Token::Eol], "".as_bytes()));
     }
 
     #[test]
@@ -237,10 +263,16 @@ mod tests {
     }
 
     #[test]
-    fn test_ambiguos_operators() {
+    fn test_ambiguous_operators() {
         use super::Token::*;
         assert_eq!(parse_tokens("|| | & && < > >> << >= <="),
                    vec![LogicalOr, BitOr, BitAnd, LogicalAnd, Less, Greater,
                         ShiftRight, ShiftLeft, GreaterOrEqual, LessOrEqual]);
+    }
+
+    #[test]
+    fn test_directive() {
+        use super::Token::*;
+        assert_eq!(parse_tokens(".include"), vec![Directive("include")]);
     }
 }

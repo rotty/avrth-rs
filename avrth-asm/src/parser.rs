@@ -4,7 +4,7 @@ use combine::stream::{Stream, StreamOnce};
 use combine::parser::repeat::skip_until;
 use combine::{any, between, chainl1, choice, eof, many, many1, none_of, optional, satisfy, satisfy_map, sep_by, skip_many, skip_many1, token, r#try as try_, Parser};
 
-use crate::lexer::Token;
+use crate::lexer::{self, Token};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Item {
@@ -296,24 +296,17 @@ parser! {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_hspace() {
-        assert_eq!(hspace().easy_parse("").expect("parsing failed"),
-                   ((), ""));
-        assert_eq!(hspace().easy_parse("\n").expect("parsing failed"),
-                   ((), "\n"));
-        assert_eq!(hspace().easy_parse("\t  \n").expect("parsing failed"),
-                   ((), "\n"));
-    }
-
-    #[test]
-    fn test_vspace() {
-        assert_eq!(vspace().easy_parse("\n").expect("parsing failed"),
-                   ((), ""));
-        assert_eq!(vspace().easy_parse("\n; A comment with EOL\n").expect("parsing failed"),
-                   ((), ""));
-        assert_eq!(vspace().easy_parse("\n; A comment with EOL\n  ").expect("parsing failed"),
-                   ((), ""));
+    fn parse<'a, I, O>(input: &'a str, p: impl Parser<Input = I, Output = O>) -> Result<O, I::Error>
+    where
+        I: Stream<Item = Token<'a>>,
+        I::Error: ParseError<I::Item, I::Range, I::Position>,
+        I::Error: From<combine::easy::Errors<u8, &'a [u8], combine::stream::PointerOffset>>,
+    {
+        let (tokens, rest) = lexer::tokens().easy_parse(input.as_bytes())?;
+        assert!(rest.len() == 0);
+        let (result, rest) = p.easy_parse(tokens.as_slice())?;
+        assert!(rest.len() == 0);
+        Ok(result)
     }
 
     #[test]
