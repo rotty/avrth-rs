@@ -37,6 +37,7 @@ impl Block {
             Self::store(&*data, index, n_bytes, value);
         }
     }
+    #[allow(dead_code)]
     fn borrow(&self) -> Ref<Vec<u8>> {
         self.data.borrow()
     }
@@ -233,7 +234,7 @@ impl InstructionSet {
     fn define(&mut self, name: &str, emitter: impl CodeEmitter + 'static) {
         self.0.insert(name.to_string(), Box::new(emitter));
     }
-    fn get(&self, name: &str) -> Option<&CodeEmitter> {
+    fn get(&self, name: &str) -> Option<&dyn CodeEmitter> {
         self.0.get(name).map(|e| e.as_ref())
     }
 }

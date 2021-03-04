@@ -1,13 +1,14 @@
-use combine::byte::{alpha_num, byte, crlf, digit, hex_digit, letter, newline, bytes};
 use combine::error::{ParseError, StreamError};
-use combine::stream::{RangeStream, Stream, StreamOnce, StreamErrorFor};
-use combine::range::{range, recognize};
+use combine::parser::byte::{alpha_num, byte, bytes, digit, hex_digit, letter};
+use combine::parser::range::{range, recognize};
 use combine::parser::repeat::skip_until;
-use combine::{any, between, chainl1, choice, eof, many, many1, none_of, optional, satisfy, sep_by, skip_many, skip_many1, r#try as try_, Parser};
+use combine::stream::{RangeStream, Stream, StreamErrorFor};
+use combine::{
+    any, attempt, between, choice, many, none_of, optional, satisfy, skip_many, skip_many1, Parser,
+};
 
 use std::fmt;
 use std::str;
-use std::string::FromUtf8Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token<'a> {
@@ -87,55 +88,74 @@ fn is_hspace(c: u8) -> bool {
     c == b' ' || c == b'\t'
 }
 
-fn hspace<'a, I>() -> impl Parser<Input = I, Output = ()>
+fn hspace<'a, I>() -> impl Parser<I, Output = ()>
 where
-    I: RangeStream<Item = u8, Range = &'a [u8]>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
+    I: RangeStream<Token = u8, Range = &'a [u8]>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     let comment = byte(b';').with(skip_until(satisfy(|c| c == b'\n' || c == b'\r')));
-    skip_many(satisfy(|c: u8| is_hspace(c))).map(|_| ())
-        .skip(optional(comment)).silent()
+    skip_many(satisfy(|c: u8| is_hspace(c)))
+        .map(|_| ())
+        .skip(optional(comment))
+        .silent()
 }
 
-fn ident_str<'a, I>() -> impl Parser<Input = I, Output = &'a str>
+fn ident_str<'a, I>() -> impl Parser<I, Output = &'a str>
 where
-    I: RangeStream<Item = u8, Range = &'a [u8]>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
+    I: RangeStream<Token = u8, Range = &'a [u8]>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     recognize(skip_many1(letter().or(byte(b'_'))).with(skip_many(alpha_num().or(byte(b'_')))))
         .map(|ident| str::from_utf8(ident).unwrap())
 }
 
-fn int_token<'a, I>() -> impl Parser<Input = I, Output = Token<'a>>
+fn directive_str<'a, I>() -> impl Parser<I, Output = &'a str>
 where
-    I: RangeStream<Item = u8, Range = &'a [u8]>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
+    I: RangeStream<Token = u8, Range = &'a [u8]>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
-    let decimal_digits = || recognize(skip_many1(digit())).map(|digits| (10, digits));
-    let hex_digits = || choice((byte(b'$').map(|_| ()),
-                                try_(range(&b"0x"[..])).map(|_| ())))
-        .with(recognize(skip_many1(hex_digit())).map(|digits| (16, digits)));
-    choice((hex_digits(), decimal_digits()))
-        .and_then(|(base, digits): (_, &[u8])| {
-            let digits = str::from_utf8(&digits).unwrap();
-            i64::from_str_radix(digits, base)
-                .map(Token::Int)
-                .map_err(StreamErrorFor::<I>::other)
-        })
+    byte(b'.')
+        .with(recognize(
+            skip_many1(letter().or(byte(b'_'))).with(skip_many(alpha_num().or(byte(b'_')))),
+        ))
+        .map(|ident| str::from_utf8(ident).unwrap())
 }
 
-fn operator_token<'a, I>() -> impl Parser<Input = I, Output = Token<'a>>
+fn int_token<'a, I>() -> impl Parser<I, Output = Token<'a>>
 where
-    I: RangeStream<Item = u8, Range = &'a [u8]>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
+    I: RangeStream<Token = u8, Range = &'a [u8]>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
+{
+    let decimal_digits = || recognize(skip_many1(digit())).map(|digits| (10, digits));
+    let hex_digits = || {
+        choice((
+            byte(b'$').map(|_| ()),
+            attempt(range(&b"0x"[..])).map(|_| ()),
+        ))
+        .with(recognize(skip_many1(hex_digit())).map(|digits| (16, digits)))
+    };
+    choice((hex_digits(), decimal_digits())).and_then(|(base, digits): (_, &[u8])| {
+        let digits = str::from_utf8(&digits).unwrap();
+        i64::from_str_radix(digits, base)
+            .map(Token::Int)
+            .map_err(StreamErrorFor::<I>::other)
+    })
+}
+
+fn operator_token<'a, I>() -> impl Parser<I, Output = Token<'a>>
+where
+    I: RangeStream<Token = u8, Range = &'a [u8]>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     choice((
-        try_(bytes(b"||")).map(|_| Token::LogicalOr),
-        try_(bytes(b"&&")).map(|_| Token::LogicalAnd),
-        try_(bytes(b"<<")).map(|_| Token::ShiftLeft),
-        try_(bytes(b">>")).map(|_| Token::ShiftRight),
-        try_(bytes(b">=")).map(|_| Token::GreaterOrEqual),
-        try_(bytes(b"<=")).map(|_| Token::LessOrEqual),
+        attempt(bytes(b"||")).map(|_| Token::LogicalOr),
+        attempt(bytes(b"&&")).map(|_| Token::LogicalAnd),
+        attempt(bytes(b"<<")).map(|_| Token::ShiftLeft),
+        attempt(bytes(b">>")).map(|_| Token::ShiftRight),
+        attempt(bytes(b"==")).map(|_| Token::Equals),
+        attempt(bytes(b"!=")).map(|_| Token::NotEquals),
+        attempt(bytes(b">=")).map(|_| Token::GreaterOrEqual),
+        attempt(bytes(b"<=")).map(|_| Token::LessOrEqual),
         byte(b'<').map(|_| Token::Less),
         byte(b'>').map(|_| Token::Greater),
         byte(b'+').map(|_| Token::Plus),
@@ -145,16 +165,17 @@ where
         byte(b'%').map(|_| Token::Mod),
         byte(b'&').map(|_| Token::BitAnd),
         byte(b'|').map(|_| Token::BitOr),
+        byte(b'~').map(|_| Token::BitNot),
         byte(b',').map(|_| Token::Comma),
         byte(b'=').map(|_| Token::Assign),
         byte(b':').map(|_| Token::Colon),
     ))
 }
 
-fn escaped_byte<I>(terminators: &'static [u8]) -> impl Parser<Input = I, Output = u8>
+fn escaped_byte<I>(terminators: &'static [u8]) -> impl Parser<I, Output = u8>
 where
-    I: Stream<Item = u8>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
+    I: Stream<Token = u8>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     choice((
         byte(b'\\').with(any().map(|escaped| match escaped {
@@ -163,111 +184,169 @@ where
             b'r' => b'\r',
             _ => escaped,
         })),
-        none_of(terminators.iter().cloned())
+        none_of(terminators.iter().cloned()),
     ))
 }
 
-fn char_literal<I>() -> impl Parser<Input = I, Output = u8>
+fn char_literal<I>() -> impl Parser<I, Output = u8>
 where
-    I: Stream<Item = u8>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>
+    I: Stream<Token = u8>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     between(byte(b'\''), byte(b'\''), escaped_byte(&[b'\'']))
 }
 
-fn string_literal<I>() -> impl Parser<Input = I, Output = String>
+fn string_literal<I>() -> impl Parser<I, Output = String>
 where
-    I: Stream<Item = u8>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>
+    I: Stream<Token = u8>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     between(byte(b'"'), byte(b'"'), many(escaped_byte(&[b'"'])))
         .and_then(|bs| String::from_utf8(bs).map_err(StreamErrorFor::<I>::other))
 }
 
-
-pub fn tokens<'a, I>() -> impl Parser<Input = I, Output = Vec<Token<'a>>>
+pub fn tokens<'a, I>() -> impl Parser<I, Output = Vec<Token<'a>>>
 where
-    I: RangeStream<Item = u8, Range = &'a [u8]>,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
+    I: RangeStream<Token = u8, Range = &'a [u8]>,
+    I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     fn unit<T>(_: T) {}
-    many(choice((
-        ident_str().map(Token::Ident),
-        int_token(),
-        string_literal().map(Token::Str),
-        char_literal().map(Token::Char),
-        operator_token(),
-        hspace().with(choice((
-            try_(bytes(b"\r\n")).map(unit),
-            byte(b'\r').map(unit),
-            byte(b'\n').map(unit),
-        ))).map(|_| Token::Eol)
-    )).skip(hspace()))
+    many(
+        choice((
+            byte(b'@').map(|_| Token::At),
+            byte(b'(').map(|_| Token::LParen),
+            byte(b')').map(|_| Token::RParen),
+            ident_str().map(Token::Ident),
+            directive_str().map(Token::Directive),
+            int_token(),
+            string_literal().map(Token::Str),
+            char_literal().map(Token::Char),
+            operator_token(),
+            hspace()
+                .with(choice((
+                    attempt(bytes(b"\r\n")).map(unit),
+                    byte(b'\r').map(unit),
+                    byte(b'\n').map(unit),
+                )))
+                .map(|_| Token::Eol),
+        ))
+        .skip(hspace()),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use combine::EasyParser;
 
     fn parse_tokens(input: &str) -> Vec<Token> {
-        let (parsed, remainder) = tokens().easy_parse(input.as_bytes()).expect("unable to parse");
+        let (parsed, remainder) = tokens()
+            .easy_parse(input.as_bytes())
+            .expect("unable to parse");
         assert_eq!(remainder, &b""[..]);
         parsed
     }
 
     #[test]
     fn test_hspace() {
-        assert_eq!(hspace().easy_parse(&b""[..]).expect("parsing failed"),
-                   ((), "".as_bytes()));
-        assert_eq!(hspace().easy_parse(&b"\n"[..]).expect("parsing failed"),
-                   ((), "\n".as_bytes()));
-        assert_eq!(hspace().easy_parse(&b"\t  \n"[..]).expect("parsing failed"),
-                   ((), "\n".as_bytes()));
+        assert_eq!(
+            hspace().easy_parse(&b""[..]).expect("parsing failed"),
+            ((), "".as_bytes())
+        );
+        assert_eq!(
+            hspace().easy_parse(&b"\n"[..]).expect("parsing failed"),
+            ((), "\n".as_bytes())
+        );
+        assert_eq!(
+            hspace().easy_parse(&b"\t  \n"[..]).expect("parsing failed"),
+            ((), "\n".as_bytes())
+        );
     }
 
     #[test]
     fn test_vspace() {
-        assert_eq!(tokens().easy_parse(&b"\n"[..]).expect("parsing failed"),
-                   (vec![Token::Eol], "".as_bytes()));
-        assert_eq!(tokens().easy_parse(&b"\n; A comment with EOL\n"[..]).expect("parsing failed"),
-                   (vec![Token::Eol, Token::Eol], "".as_bytes()));
-        assert_eq!(tokens().easy_parse(&b"\n; A comment with EOL\n  "[..]).expect("parsing failed"),
-                   (vec![Token::Eol, Token::Eol], "".as_bytes()));
+        assert_eq!(
+            tokens().easy_parse(&b"\n"[..]).expect("parsing failed"),
+            (vec![Token::Eol], "".as_bytes())
+        );
+        assert_eq!(
+            tokens()
+                .easy_parse(&b"\n; A comment with EOL\n"[..])
+                .expect("parsing failed"),
+            (vec![Token::Eol, Token::Eol], "".as_bytes())
+        );
+        assert_eq!(
+            tokens()
+                .easy_parse(&b"\n; A comment with EOL\n  "[..])
+                .expect("parsing failed"),
+            (vec![Token::Eol, Token::Eol], "".as_bytes())
+        );
     }
 
     #[test]
     fn test_int() {
-        assert_eq!(parse_tokens("1 2 3 42 0xFFEED $ABCD  "),
-                   vec![1, 2, 3, 42, 0xFFEED, 0xABCD].into_iter().map(Token::Int).collect::<Vec<_>>());
+        assert_eq!(
+            parse_tokens("1 2 3 42 0xFFEED $ABCD  "),
+            vec![1, 2, 3, 42, 0xFFEED, 0xABCD]
+                .into_iter()
+                .map(Token::Int)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn test_char() {
-        assert_eq!(parse_tokens(r#"'2' '3' '\t' '\''  "#),
-                   vec![b'2', b'3', b'\t', b'\''].into_iter().map(Token::Char).collect::<Vec<_>>());
+        assert_eq!(
+            parse_tokens(r#"'2' '3' '\t' '\''  "#),
+            vec![b'2', b'3', b'\t', b'\'']
+                .into_iter()
+                .map(Token::Char)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn test_str() {
-        assert_eq!(parse_tokens(r#""Hello" "\t\n\r" "World""#),
-                   vec!["Hello", "\t\n\r", "World"].into_iter().map(|s| Token::Str(s.into())).collect::<Vec<_>>());
+        assert_eq!(
+            parse_tokens(r#""Hello" "\t\n\r" "World""#),
+            vec!["Hello", "\t\n\r", "World"]
+                .into_iter()
+                .map(|s| Token::Str(s.into()))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn test_arithmetic_operators() {
         use super::Token::*;
-        assert_eq!(parse_tokens("++-*/%,"),
-                   vec![Plus, Plus, Minus, Star, Slash, Mod, Comma]);
-        assert_eq!(parse_tokens("+ + - * / % ,"),
-                   vec![Plus, Plus, Minus, Star, Slash, Mod, Comma]);
+        assert_eq!(
+            parse_tokens("++-*/%,"),
+            vec![Plus, Plus, Minus, Star, Slash, Mod, Comma]
+        );
+        assert_eq!(
+            parse_tokens("+ + - * / % ,"),
+            vec![Plus, Plus, Minus, Star, Slash, Mod, Comma]
+        );
     }
 
     #[test]
     fn test_ambiguous_operators() {
         use super::Token::*;
-        assert_eq!(parse_tokens("|| | & && < > >> << >= <="),
-                   vec![LogicalOr, BitOr, BitAnd, LogicalAnd, Less, Greater,
-                        ShiftRight, ShiftLeft, GreaterOrEqual, LessOrEqual]);
+        assert_eq!(
+            parse_tokens("|| | & && < > >> << >= <="),
+            vec![
+                LogicalOr,
+                BitOr,
+                BitAnd,
+                LogicalAnd,
+                Less,
+                Greater,
+                ShiftRight,
+                ShiftLeft,
+                GreaterOrEqual,
+                LessOrEqual
+            ]
+        );
     }
 
     #[test]

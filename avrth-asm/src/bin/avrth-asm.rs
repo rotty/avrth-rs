@@ -1,22 +1,19 @@
 #![recursion_limit = "1024"]
 
 use avrth_asm::avr_asm::{self, Assembler};
-use avrth_asm::parser::{self, Item};
 use avrth_asm::lexer;
+use avrth_asm::parser::{self, Item};
 
-use combine::Parser;
-use combine::stream::IteratorStream;
-use combine::stream::buffered::BufferedStream;
-use combine::stream::state::State;
 use combine::stream::{easy, PointerOffset};
-use failure::{format_err, Error, ResultExt};
+use combine::{EasyParser, Parser};
+use failure::{format_err, Error};
 use structopt::StructOpt;
 
 use std::env;
 use std::fmt;
-use std::path::{Path, PathBuf};
-use std::io::{self, BufReader, Read};
 use std::fs::File;
+use std::io::{self, BufReader, Read};
+use std::path::{Path, PathBuf};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "avrth-asm", about = "AVR assembler")]
@@ -37,10 +34,13 @@ impl Asm {
     fn new<I, P>(include_dirs: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = P>,
-        P: AsRef<Path>
+        P: AsRef<Path>,
     {
         Ok(Asm {
-            include_dirs: include_dirs.into_iter().map(|p| p.as_ref().to_path_buf()).collect(),
+            include_dirs: include_dirs
+                .into_iter()
+                .map(|p| p.as_ref().to_path_buf())
+                .collect(),
             current_dir: env::current_dir()?,
             asm: Assembler::new(),
         })
@@ -59,24 +59,30 @@ impl Asm {
 
     fn include_file<P>(&mut self, filename: P) -> Result<(), Error>
     where
-        P: AsRef<Path>
+        P: AsRef<Path>,
     {
         let filename = filename.as_ref();
         let file = self.open_file(true, filename)?;
         let mut reader = BufReader::new(file);
         // TODO: Reading the whole file into memory is kinda suboptimal
-        let mut input : Vec<u8> = vec![];
+        let mut input: Vec<u8> = vec![];
         reader.read_to_end(&mut input)?;
         //let input = BufferedStream::new(State::new(IteratorStream::new()), 128);
-        let (tokens, rest) : (Vec<lexer::Token>, _) = lexer::tokens().easy_parse(&input[..]).map_err(|e| {
-            format_err!("{}:{}: lexer error", filename.display(), e.position)
-        })?;
+        let (tokens, rest): (Vec<lexer::Token>, _) = lexer::tokens()
+            .easy_parse(&input[..])
+            .map_err(|e| format_err!("{}:{}: lexer error", filename.display(), e.position))?;
         if !rest.is_empty() {
             let token: String = String::from_utf8_lossy(rest).chars().take(5).collect();
-            return Err(format_err!("{}: unexpected token: {}", filename.display(), token));
+            return Err(format_err!(
+                "{}: unexpected token: {}",
+                filename.display(),
+                token
+            ));
         }
         dbg!(&tokens);
-        let (items, _): (Vec<parser::Item>, _) = parser::file().easy_parse(tokens.as_slice()).map_err(parse_error)?;
+        let (items, _): (Vec<parser::Item>, _) = parser::file()
+            .easy_parse(tokens.as_slice())
+            .map_err(|e| format_err!("parse error at {}", e.position))?;
         for item in items {
             println!("{:?}", item);
             match item {
@@ -92,7 +98,7 @@ impl Asm {
 
     fn open_file<P>(&mut self, current: bool, filename: P) -> Result<File, Error>
     where
-        P: AsRef<Path>
+        P: AsRef<Path>,
     {
         let filename = filename.as_ref();
         let mut dirs = if current {
@@ -107,29 +113,30 @@ impl Asm {
                 Ok(file) => {
                     self.current_dir = path.parent().unwrap().to_path_buf();
                     return Ok(file);
-                },
-                Err(_) => {},
+                }
+                Err(_) => {}
             }
         }
-        Err(io::Error::new(io::ErrorKind::NotFound,
-                           format!("file {} not found in search path {}",
-                                   filename.display(), SearchPath(&dirs)))
-            .into())
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "file {} not found in search path {}",
+                filename.display(),
+                SearchPath(&dirs)
+            ),
+        )
+        .into())
     }
 
     fn handle_directive(&mut self, name: &str, args: &[parser::Expr]) -> Result<(), Error> {
         match name {
-            "include" => {
-                match args {
-                    [parser::Expr::String(filename)] => {
-                        self.include_file(filename)
-                    }
-                    _ => Err(format_err!(".include directive takes a single string literal"))
-                }
-            }
-            _ => {
-                Err(format_err!("unknown directive '{}'", name))
-            }
+            "include" => match args {
+                [parser::Expr::String(filename)] => self.include_file(filename),
+                _ => Err(format_err!(
+                    ".include directive takes a single string literal"
+                )),
+            },
+            _ => Err(format_err!("unknown directive '{}'", name)),
         }
     }
 }
@@ -143,7 +150,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn instruction_args(args: &[parser::Expr]) -> Vec<avr_asm::Expr> {
+fn instruction_args(_args: &[parser::Expr]) -> Vec<avr_asm::Expr> {
     unimplemented!()
 }
 
@@ -161,8 +168,6 @@ impl<'a> fmt::Display for SearchPath<'a> {
     }
 }
 
-type ParseError<'a> = easy::Errors<lexer::Token<'a>, &'a [lexer::Token<'a>], PointerOffset>;
-
-fn parse_error(e: ParseError) -> Error {
-    format_err!("parse error at {}", e.position)
-}
+// fn parse_error<'a>(e: easy::Errors<lexer::Token<'a>, &'a [lexer::Token<'a>], PointerOffset<lexer::Token<'a>>>) -> Error {
+//     format_err!("parse error at {}", e.position)
+// }
