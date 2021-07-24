@@ -4,11 +4,12 @@ use avrth_asm::avr_asm::{self, Assembler};
 use avrth_asm::lexer;
 use avrth_asm::parser::{self, Item};
 
-use combine::stream::{easy, PointerOffset};
-use combine::{EasyParser, Parser};
+use combine::EasyParser;
 use failure::{format_err, Error};
 use structopt::StructOpt;
 
+use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::env;
 use std::fmt;
 use std::fs::File;
@@ -28,6 +29,10 @@ struct Asm {
     include_dirs: Vec<PathBuf>,
     current_dir: PathBuf,
     asm: Assembler,
+    environment: HashMap<String, parser::Expr>,
+    register_names: HashMap<String, String>,
+    in_macro: Option<(String, Vec<parser::Item>)>,
+    macros: HashMap<String, Vec<parser::Item>>,
 }
 
 impl Asm {
@@ -43,6 +48,10 @@ impl Asm {
                 .collect(),
             current_dir: env::current_dir()?,
             asm: Assembler::new(),
+            environment: HashMap::new(),
+            register_names: HashMap::new(),
+            in_macro: None,
+            macros: HashMap::new(),
         })
     }
 
@@ -85,11 +94,24 @@ impl Asm {
             .map_err(|e| format_err!("parse error at {}", e.position))?;
         for item in items {
             println!("{:?}", item);
-            match item {
-                Item::Directive(name, args) => self.handle_directive(&name, &args)?,
-                Item::Label(name) => self.asm.define_symbol(&name, i32::from(self.asm.pc())),
-                Item::Instruction(name, args) => {
-                    self.asm.assemble(&name, &instruction_args(&args))?;
+            if let Some((_, items)) = &mut self.in_macro {
+                match item {
+                    Item::Directive(name, args) if name == "endm" => {
+                        if !args.is_empty() {
+                            return Err(format_err!(".endm directive does not take arguments"));
+                        }
+                        let (macro_name, macro_items) = self.in_macro.take().unwrap();
+                        self.macros.insert(macro_name, macro_items);
+                    }
+                    _ => items.push(item),
+                }
+            } else {
+                match item {
+                    Item::Directive(name, args) => self.handle_directive(&name, &args)?,
+                    Item::Label(name) => self.asm.define_symbol(&name, i32::from(self.asm.pc())),
+                    Item::Instruction(name, args) => {
+                        self.asm.assemble(&name, &instruction_args(&args)?)?;
+                    }
                 }
             }
         }
@@ -129,12 +151,43 @@ impl Asm {
     }
 
     fn handle_directive(&mut self, name: &str, args: &[parser::Expr]) -> Result<(), Error> {
+        use parser::Expr;
         match name {
+            "def" => match args {
+                [Expr::Assign(name, expr)] => {
+                    let register = match &**expr {
+                        Expr::Ident(register) => register,
+                        _ => return Err(format_err!("invalid .def directive")),
+                    };
+                    self.register_names.insert(name.clone(), register.clone());
+                    Ok(())
+                }
+                _ => Err(format_err!("invalid .def directive")),
+            },
             "include" => match args {
-                [parser::Expr::String(filename)] => self.include_file(filename),
+                [Expr::String(filename)] => self.include_file(filename),
                 _ => Err(format_err!(
                     ".include directive takes a single string literal"
                 )),
+            },
+            "list" => Ok(()),   // TODO
+            "nolist" => Ok(()), // TODO
+            "set" => match args {
+                [Expr::Assign(name, expr)] => {
+                    self.environment.insert(name.clone(), *expr.clone());
+                    Ok(())
+                }
+                _ => Err(format_err!("invalid .set directive")),
+            },
+            "macro" => match args {
+                [Expr::Ident(name)] => {
+                    if self.in_macro.is_some() {
+                        return Err(format_err!("nested .macro directive not supported"));
+                    }
+                    self.in_macro = Some((name.clone(), Vec::new()));
+                    Ok(())
+                }
+                _ => Err(format_err!("invalid .macro directive")),
             },
             _ => Err(format_err!("unknown directive '{}'", name)),
         }
@@ -150,8 +203,31 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn instruction_args(_args: &[parser::Expr]) -> Vec<avr_asm::Expr> {
-    unimplemented!()
+fn instruction_args(args: &[parser::Expr]) -> Result<Vec<avr_asm::Expr>, Error> {
+    args.iter().map(|expr| asm_expr(expr)).collect()
+}
+
+fn asm_expr(expr: &parser::Expr) -> Result<avr_asm::Expr, Error> {
+    use avr_asm::Expr;
+    use parser::Expr::*;
+
+    let asm_expr = match expr {
+        Ident(name) => Expr::Ident(name.clone()),
+        Int(value) => Expr::Int(
+            i32::try_from(*value)
+                .map_err(|e| format_err!("integer argument out of bounds: {}", e))?,
+        ),
+        Binary(op, lhs, rhs) => {
+            use parser::BinaryOperator::*;
+            match op {
+                Add => Expr::Plus(vec![asm_expr(lhs)?, asm_expr(rhs)?]),
+                Subtract => Expr::Minus(vec![asm_expr(lhs)?, asm_expr(rhs)?]),
+                _ => return Err(format_err!("unsupported binary operation {:?}", op)),
+            }
+        }
+        _ => return Err(format_err!("unsupported expression: {:?}", expr)),
+    };
+    Ok(asm_expr)
 }
 
 struct SearchPath<'a>(&'a [&'a PathBuf]);
