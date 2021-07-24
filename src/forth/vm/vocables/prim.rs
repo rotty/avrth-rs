@@ -34,7 +34,7 @@ macro_rules! comparator {
 
 pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
     let mut v = Vocabulary::new();
-    primitives!{
+    primitives! {
         v,
         // Arithmetic
         fn run_plus(vm, "+") {

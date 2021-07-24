@@ -385,7 +385,7 @@ impl Assembler {
                     max_k
                 ))
             }
-        };
+        }
         match *expr {
             Expr::Int(n) => Ok(Operand::Value(check_range(expr, n, n_bits)?)),
             Expr::Ident(ref name) => match self.symbol_lookup(&name) {
@@ -476,7 +476,8 @@ mod tests {
                 .eval(
                     &Expr::Plus(vec![Expr::Int(23), Expr::Int(9), Expr::Int(10)]),
                     Constant(8)
-                ).unwrap(),
+                )
+                .unwrap(),
             Value(42)
         );
     }
@@ -496,7 +497,8 @@ mod tests {
                 &mut block,
                 0,
                 &[Expr::Int(0x42), Expr::Int(0x67)],
-            ).unwrap();
+            )
+            .unwrap();
         assert_eq!(&block.borrow()[..], &[0x67, 0x42]);
     }
 
@@ -507,7 +509,8 @@ mod tests {
             .assemble(
                 "mul",
                 vec![Expr::Ident("r16".into()), Expr::Ident("r10".into())].as_slice(),
-            ).unwrap();
+            )
+            .unwrap();
         let blocks: Vec<_> = assembler
             .flush()
             .expect("could not flush")

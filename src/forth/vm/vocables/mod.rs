@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use byteorder::ByteOrder;
-use failure::{Error, format_err};
+use failure::{format_err, Error};
 
 use crate::forth::reader::{Reader, Token};
 use crate::forth::vm::{Cell, Primitive};

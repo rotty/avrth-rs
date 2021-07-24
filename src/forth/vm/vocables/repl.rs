@@ -152,7 +152,8 @@ mod tests {
                 &[],
                 "foo bar! baz",
                 "refill drop 4 >in ! parse-name type"
-            ).unwrap(),
+            )
+            .unwrap(),
             (vec![], "foo bar! baz\nbar!".to_string())
         );
     }

@@ -216,7 +216,8 @@ mod tests {
                 &v,
                 &[],
                 r#"create-string-table s" foo" rot string-table-contains?"#
-            ).unwrap(),
+            )
+            .unwrap(),
             vec![u16::from_bool(false)]
         );
         assert_eq!(
@@ -227,7 +228,8 @@ mod tests {
                     r#"create-string-table dup s" foo" rot string-table-add"#,
                     r#" s" foo" rot string-table-contains?"#
                 )
-            ).unwrap(),
+            )
+            .unwrap(),
             vec![u16::from_bool(true)]
         );
     }
