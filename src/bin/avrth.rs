@@ -1,16 +1,10 @@
-extern crate avrth;
-
-extern crate byteorder;
-extern crate env_logger;
-extern crate failure;
-extern crate structopt;
-
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context;
 use byteorder::LittleEndian;
-use failure::{Error, ResultExt};
+//use failure::{Error, ResultExt};
 use structopt::StructOpt;
 
 use avrth::forth::vm::{self, vocables, Vm, VmError};
@@ -52,7 +46,7 @@ fn make_standard_vm<R, W, E>(
     stdout: W,
     stderr: E,
     fpath: Vec<Box<Path>>,
-) -> Result<Vm<u16, LittleEndian>, Error>
+) -> anyhow::Result<Vm<u16, LittleEndian>>
 where
     R: io::Read + 'static,
     W: io::Write + 'static,
@@ -88,7 +82,7 @@ where
     })
 }
 
-fn compile_program<O, I>(_output: O, input_files: I, fpath: Vec<PathBuf>) -> Result<(), Error>
+fn compile_program<O, I>(_output: O, input_files: I, fpath: Vec<PathBuf>) -> anyhow::Result<()>
 where
     O: io::Write,
     I: IntoIterator,
@@ -105,12 +99,12 @@ where
         let file = vm.intern_file(File::open(path.as_ref())?);
         vm.stack_push(file);
         vm.run("include-file")
-            .with_context(|_| format!("while compiling {}", path.as_ref().display()))?;
+            .with_context(|| format!("while compiling {}", path.as_ref().display()))?;
     }
     Ok(())
 }
 
-fn run_repl(fpath: Vec<PathBuf>) -> Result<(), Error> {
+fn run_repl(fpath: Vec<PathBuf>) -> anyhow::Result<()> {
     let mut vm = make_standard_vm(
         io::stdin(),
         io::stdout(),
@@ -133,7 +127,7 @@ fn run_repl(fpath: Vec<PathBuf>) -> Result<(), Error> {
     Ok(())
 }
 
-fn run_program(file: &Path, fpath: Vec<PathBuf>) -> Result<(), Error> {
+fn run_program(file: &Path, fpath: Vec<PathBuf>) -> anyhow::Result<()> {
     let mut vm = make_standard_vm(
         File::open(file)?,
         io::stdout(),
@@ -143,11 +137,11 @@ fn run_program(file: &Path, fpath: Vec<PathBuf>) -> Result<(), Error> {
     Ok(vm.run("quit")?)
 }
 
-fn run_tethered(_tty: &Path) -> Result<(), Error> {
+fn run_tethered(_tty: &Path) -> anyhow::Result<()> {
     unimplemented!()
 }
 
-fn file_or_stdout<P>(file: Option<P>) -> Result<Box<dyn io::Write>, Error>
+fn file_or_stdout<P>(file: Option<P>) -> anyhow::Result<Box<dyn io::Write>>
 where
     P: AsRef<Path>,
 {
@@ -157,7 +151,7 @@ where
     }
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let avrth = Avrth::from_args();

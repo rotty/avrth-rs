@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use anyhow::anyhow;
 use byteorder::ByteOrder;
-use failure::{format_err, Error};
 
 use crate::forth::reader::{Reader, Token};
 use crate::forth::vm::{Cell, Primitive};
@@ -80,7 +80,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
         self.names.push(name.into());
     }
 
-    pub fn define_forth_words(&mut self, code: &'a str) -> Result<(), Error> {
+    pub fn define_forth_words(&mut self, code: &'a str) -> anyhow::Result<()> {
         #[derive(Copy, Clone, Debug)]
         enum State<'a> {
             TopLevel,
@@ -117,11 +117,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
                     code.push(token);
                 }
                 (token, _) => {
-                    return Err(format_err!(
-                        "unexpected token {:?} in state {:?}",
-                        token,
-                        state
-                    ));
+                    return Err(anyhow!("unexpected token {:?} in state {:?}", token, state));
                 }
             }
         }
@@ -131,7 +127,7 @@ impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
                 self.define_forth_word(name, false, code);
                 Ok(())
             }
-            _ => Err(format_err!("unterminated word definition")),
+            _ => Err(anyhow!("unterminated word definition")),
         }
     }
 

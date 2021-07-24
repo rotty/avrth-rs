@@ -3,7 +3,6 @@ use std::io::{self, Cursor};
 use std::rc::Rc;
 
 use byteorder::ByteOrder;
-use failure::Error;
 
 use crate::forth::reader::Reader;
 use crate::forth::vm::vocables::Vocabulary;
@@ -42,7 +41,7 @@ fn make_vm<C: Cell, B: ByteOrder>(
     stdin: &str,
     stdout: RefCursor,
     stderr: RefCursor,
-) -> Result<Vm<C, B>, Error> {
+) -> anyhow::Result<Vm<C, B>> {
     Vm::<C, B>::new(Options {
         ram_size: 2048,
         ram_start: 36,
@@ -65,7 +64,7 @@ pub fn run_io_test<C: Cell, B: ByteOrder>(
     stack: &[C],
     input: &str,
     code: &str,
-) -> Result<(Vec<C>, String), Error> {
+) -> anyhow::Result<(Vec<C>, String)> {
     let tokens: Vec<_> = Reader::new(code).tokens().collect();
     let stdout = RefCursor::new();
     let stderr = RefCursor::new();
@@ -90,6 +89,6 @@ pub fn run_test<C: Cell, B: ByteOrder>(
     vocabularies: &[VocabularyLoader<C, B>],
     stack: &[C],
     code: &str,
-) -> Result<Vec<C>, Error> {
+) -> anyhow::Result<Vec<C>> {
     run_io_test(vocabularies, stack, "", code).map(|r| r.0)
 }

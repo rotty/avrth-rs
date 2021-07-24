@@ -9,9 +9,9 @@ use std::rc::Rc;
 use std::str;
 
 use byteorder::ByteOrder;
-use failure::{Error, Fail};
 use log::trace;
 use num_traits::NumCast;
+use thiserror::Error;
 
 pub mod cell;
 mod dict;
@@ -40,7 +40,7 @@ pub enum Prim<C> {
 }
 
 type Primitive<C, B> = fn(&mut Vm<C, B>) -> Result<Prim<C>, VmError>;
-type VocabularyLoader<C, B> = fn() -> Result<Vocabulary<'static, C, B>, Error>;
+type VocabularyLoader<C, B> = fn() -> anyhow::Result<Vocabulary<'static, C, B>>;
 
 pub struct Vm<C: Cell, B: ByteOrder> {
     parameters: Parameters<C>,
@@ -88,11 +88,11 @@ pub struct Parameters<C> {
     pub fpath: C,
 }
 
-#[derive(Fail, Debug)]
+#[derive(Error, Debug)]
 pub enum VmError {
-    #[fail(display = "Forth error {}", _0)]
+    #[error("Forth error {0}")]
     ForthError(isize),
-    #[fail(display = "Undefined word '{}'", _0)]
+    #[error("Undefined word '{0}'")]
     UndefinedWord(String),
 }
 
@@ -117,7 +117,7 @@ impl From<io::Error> for VmError {
 // }
 
 impl<C: Cell, B: ByteOrder> Vm<C, B> {
-    pub fn new(options: Options<C, B>) -> Result<Self, Error> {
+    pub fn new(options: Options<C, B>) -> anyhow::Result<Self> {
         let cast = |n| -> C { NumCast::from(n).unwrap() };
         let sp0 = cast(options.ram_size - (options.rstack_size * size_of::<C>()) - 1);
         let rsp0 = cast(options.ram_size - 1);

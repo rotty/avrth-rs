@@ -8,7 +8,8 @@ edition = "2018"
 
 [dependencies]
 structopt = "0.3.22"
-failure = "0.1.2"
+anyhow = "1.0.42"
+thiserror = "1.0.26"
 num-traits = "0.2.5"
 byteorder = "1.2.6"
 log = "0.4.5"

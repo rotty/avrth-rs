@@ -4,8 +4,8 @@ use avrth_asm::avr_asm::{self, Assembler};
 use avrth_asm::lexer;
 use avrth_asm::parser::{self, Item};
 
+use anyhow::{anyhow, Error};
 use combine::EasyParser;
-use failure::{format_err, Error};
 use structopt::StructOpt;
 
 use std::collections::HashMap;
@@ -79,10 +79,10 @@ impl Asm {
         //let input = BufferedStream::new(State::new(IteratorStream::new()), 128);
         let (tokens, rest): (Vec<lexer::Token>, _) = lexer::tokens()
             .easy_parse(&input[..])
-            .map_err(|e| format_err!("{}:{}: lexer error", filename.display(), e.position))?;
+            .map_err(|e| anyhow!("{}:{}: lexer error", filename.display(), e.position))?;
         if !rest.is_empty() {
             let token: String = String::from_utf8_lossy(rest).chars().take(5).collect();
-            return Err(format_err!(
+            return Err(anyhow!(
                 "{}: unexpected token: {}",
                 filename.display(),
                 token
@@ -91,14 +91,14 @@ impl Asm {
         dbg!(&tokens);
         let (items, _): (Vec<parser::Item>, _) = parser::file()
             .easy_parse(tokens.as_slice())
-            .map_err(|e| format_err!("parse error at {}", e.position))?;
+            .map_err(|e| anyhow!("parse error at {}", e.position))?;
         for item in items {
             println!("{:?}", item);
             if let Some((_, items)) = &mut self.in_macro {
                 match item {
                     Item::Directive(name, args) if name == "endm" => {
                         if !args.is_empty() {
-                            return Err(format_err!(".endm directive does not take arguments"));
+                            return Err(anyhow!(".endm directive does not take arguments"));
                         }
                         let (macro_name, macro_items) = self.in_macro.take().unwrap();
                         self.macros.insert(macro_name, macro_items);
@@ -158,18 +158,16 @@ impl Asm {
                 [Expr::Assign(name, expr)] => {
                     let register = match &**expr {
                         Expr::Ident(register) => register,
-                        _ => return Err(format_err!("invalid .def directive")),
+                        _ => return Err(anyhow!("invalid .def directive")),
                     };
                     self.register_names.insert(name.clone(), register.clone());
                     Ok(())
                 }
-                _ => Err(format_err!("invalid .def directive")),
+                _ => Err(anyhow!("invalid .def directive")),
             },
             "include" => match args {
                 [Expr::String(filename)] => self.include_file(filename),
-                _ => Err(format_err!(
-                    ".include directive takes a single string literal"
-                )),
+                _ => Err(anyhow!(".include directive takes a single string literal")),
             },
             "list" => Ok(()),   // TODO
             "nolist" => Ok(()), // TODO
@@ -178,19 +176,19 @@ impl Asm {
                     self.environment.insert(name.clone(), *expr.clone());
                     Ok(())
                 }
-                _ => Err(format_err!("invalid .set directive")),
+                _ => Err(anyhow!("invalid .set directive")),
             },
             "macro" => match args {
                 [Expr::Ident(name)] => {
                     if self.in_macro.is_some() {
-                        return Err(format_err!("nested .macro directive not supported"));
+                        return Err(anyhow!("nested .macro directive not supported"));
                     }
                     self.in_macro = Some((name.clone(), Vec::new()));
                     Ok(())
                 }
-                _ => Err(format_err!("invalid .macro directive")),
+                _ => Err(anyhow!("invalid .macro directive")),
             },
-            _ => Err(format_err!("unknown directive '{}'", name)),
+            _ => Err(anyhow!("unknown directive '{}'", name)),
         }
     }
 }
@@ -215,18 +213,17 @@ fn asm_expr(expr: &parser::Expr) -> Result<avr_asm::Expr, Error> {
     let asm_expr = match expr {
         Ident(name) => Expr::Ident(name.clone()),
         Int(value) => Expr::Int(
-            i32::try_from(*value)
-                .map_err(|e| format_err!("integer argument out of bounds: {}", e))?,
+            i32::try_from(*value).map_err(|e| anyhow!("integer argument out of bounds: {}", e))?,
         ),
         Binary(op, lhs, rhs) => {
             use parser::BinaryOperator::*;
             match op {
                 Add => Expr::Plus(vec![asm_expr(lhs)?, asm_expr(rhs)?]),
                 Subtract => Expr::Minus(vec![asm_expr(lhs)?, asm_expr(rhs)?]),
-                _ => return Err(format_err!("unsupported binary operation {:?}", op)),
+                _ => return Err(anyhow!("unsupported binary operation {:?}", op)),
             }
         }
-        _ => return Err(format_err!("unsupported expression: {:?}", expr)),
+        _ => return Err(anyhow!("unsupported expression: {:?}", expr)),
     };
     Ok(asm_expr)
 }
@@ -246,5 +243,5 @@ impl<'a> fmt::Display for SearchPath<'a> {
 }
 
 // fn parse_error<'a>(e: easy::Errors<lexer::Token<'a>, &'a [lexer::Token<'a>], PointerOffset<lexer::Token<'a>>>) -> Error {
-//     format_err!("parse error at {}", e.position)
+//     anyhow!("parse error at {}", e.position)
 // }

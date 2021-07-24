@@ -5,7 +5,6 @@ use std::thread;
 use std::time;
 
 use byteorder::ByteOrder;
-use failure::Error;
 
 use crate::forth::vm::vocables::Vocabulary;
 use crate::forth::vm::{Cell, Prim, Vm, VmError};
@@ -32,7 +31,7 @@ macro_rules! comparator {
     }};
 }
 
-pub fn load<C: Cell, B: ByteOrder>() -> Result<Vocabulary<'static, C, B>, Error> {
+pub fn load<C: Cell, B: ByteOrder>() -> anyhow::Result<Vocabulary<'static, C, B>> {
     let mut v = Vocabulary::new();
     primitives! {
         v,

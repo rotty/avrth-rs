@@ -1,8 +1,8 @@
 use combine::error::ParseError;
 use combine::stream::Stream;
 use combine::{
-    attempt, between, chainl1, choice, eof, optional, satisfy_map, sep_by, skip_many1, token,
-    Parser,
+    attempt, between, chainl1, choice, eof, optional, parser, satisfy_map, sep_by, skip_many1,
+    token, Parser,
 };
 
 use crate::lexer::Token;

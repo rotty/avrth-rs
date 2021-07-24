@@ -4,7 +4,8 @@ use std::fmt;
 use std::mem;
 use std::rc::Rc;
 
-use failure::Error; // TODO: replace by custom type
+// TODO: Use custom error type
+use anyhow::{anyhow, Error};
 
 struct Block {
     data: Rc<RefCell<Vec<u8>>>,
@@ -187,7 +188,7 @@ where
         operands: &[Expr],
     ) -> Result<Option<DeferredEmit>, Error> {
         if operands.len() != 2 {
-            return Err(format_err!("two arguments expected, got: {:?}", operands));
+            return Err(anyhow!("two arguments expected, got: {:?}", operands));
         }
         match (
             assembler.eval(&operands[0], self.types.0)?,
@@ -329,7 +330,7 @@ impl Assembler {
         let emitter = self
             .instructions
             .get(mnemonic)
-            .ok_or_else(|| format_err!("unknown mnemonic `{}`", mnemonic))?;
+            .ok_or_else(|| anyhow!("unknown mnemonic `{}`", mnemonic))?;
         // FIXME: check pc fits into u16
         let pc = *block_base + block.len() as u16;
         if let Some(defer) = emitter.emit(self, block, pc, args)? {
@@ -372,8 +373,8 @@ impl Assembler {
                     .registers
                     .get(name)
                     .map(|i| Operand::Value(u16::from(*i)))
-                    .ok_or_else(|| format_err!("invalid register name `{}`", name)),
-                _ => Err(format_err!("expected register name, found `{}`", expr)),
+                    .ok_or_else(|| anyhow!("invalid register name `{}`", name)),
+                _ => Err(anyhow!("expected register name, found `{}`", expr)),
             },
             _ => unimplemented!(),
         }
@@ -385,7 +386,7 @@ impl Assembler {
             if min_k <= n && n < max_k {
                 Ok(n as u16)
             } else {
-                Err(format_err!(
+                Err(anyhow!(
                     "value out of range: {} (evaluating to {}) is not within [{}..{})",
                     expr,
                     n,
@@ -404,7 +405,7 @@ impl Assembler {
                     Ok(Operand::Deferred(Box::new(move |assembler| {
                         let value = assembler
                             .symbol_lookup(&name)
-                            .ok_or_else(|| format_err!("undefined symbol {}", name))?;
+                            .ok_or_else(|| anyhow!("undefined symbol {}", name))?;
                         check_range(&expr, value, n_bits)
                     })))
                 }
@@ -416,7 +417,7 @@ impl Assembler {
                 let mut iter = operands.iter();
                 let mut result = iter
                     .next()
-                    .ok_or_else(|| format_err!("too few arguments for operator `-`"))?
+                    .ok_or_else(|| anyhow!("too few arguments for operator `-`"))?
                     .resolve(assembler)?;
                 for op in iter {
                     result -= op.resolve(assembler)?;
