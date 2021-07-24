@@ -44,9 +44,9 @@ impl Block {
     fn store(data: &RefCell<Vec<u8>>, index: usize, n_bytes: usize, value: u32) {
         let data = &mut data.borrow_mut()[index..];
         let mut v = value;
-        for i in 0..n_bytes {
-            data[i] = v as u8;
-            v = v >> 8;
+        for loc in &mut data[..n_bytes] {
+            *loc = v as u8;
+            v >>= 8;
         }
     }
     // This will panic if there are still outstanding references
@@ -169,8 +169,8 @@ impl<E> Op2Emitter<E> {
     fn new(encoder: E, types: (ExprType, ExprType), size: usize) -> Self {
         Op2Emitter {
             encoder: Rc::new(encoder),
-            types: types,
-            size: size,
+            types,
+            size,
         }
     }
 }
@@ -201,24 +201,27 @@ where
                 let mut emit = block.push_defer(self.size);
                 let encoder = self.encoder.clone();
                 Ok(Some(Box::new(move |assembler| {
-                    Ok(emit(encoder(u32::from(v0), u32::from(fn1(assembler)?))))
+                    emit(encoder(u32::from(v0), u32::from(fn1(assembler)?)));
+                    Ok(())
                 })))
             }
             (Operand::Deferred(fn0), Operand::Value(v1)) => {
                 let mut emit = block.push_defer(self.size);
                 let encoder = self.encoder.clone();
                 Ok(Some(Box::new(move |assembler| {
-                    Ok(emit(encoder(u32::from(fn0(assembler)?), u32::from(v1))))
+                    emit(encoder(u32::from(fn0(assembler)?), u32::from(v1)));
+                    Ok(())
                 })))
             }
             (Operand::Deferred(fn0), Operand::Deferred(fn1)) => {
                 let mut emit = block.push_defer(self.size);
                 let encoder = self.encoder.clone();
                 Ok(Some(Box::new(move |assembler| {
-                    Ok(emit(encoder(
+                    emit(encoder(
                         u32::from(fn0(assembler)?),
                         u32::from(fn1(assembler)?),
-                    )))
+                    ));
+                    Ok(())
                 })))
             }
         }
@@ -232,7 +235,7 @@ impl InstructionSet {
         InstructionSet(HashMap::new())
     }
     fn define(&mut self, name: &str, emitter: impl CodeEmitter + 'static) {
-        self.0.insert(name.to_string(), Box::new(emitter));
+        self.0.insert(name.into(), Box::new(emitter));
     }
     fn get(&self, name: &str) -> Option<&dyn CodeEmitter> {
         self.0.get(name).map(|e| e.as_ref())
@@ -301,6 +304,12 @@ fn avr_registers() -> HashMap<String, u8> {
     registers
 }
 
+impl Default for Assembler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Assembler {
     pub fn new() -> Self {
         Assembler {
@@ -323,9 +332,8 @@ impl Assembler {
             .ok_or_else(|| format_err!("unknown mnemonic `{}`", mnemonic))?;
         // FIXME: check pc fits into u16
         let pc = *block_base + block.len() as u16;
-        match emitter.emit(self, block, pc, args)? {
-            Some(defer) => self.defers.push(defer),
-            None => {}
+        if let Some(defer) = emitter.emit(self, block, pc, args)? {
+            self.defers.push(defer);
         }
         self.current_block = current;
         Ok(())
@@ -345,8 +353,8 @@ impl Assembler {
             self.blocks.insert(block_base, block);
         }
         // Empty our state first, so it is defined in case of failure.
-        let blocks = mem::replace(&mut self.blocks, BTreeMap::new());
-        let defers = mem::replace(&mut self.defers, vec![]);
+        let blocks = mem::take(&mut self.blocks);
+        let defers = mem::take(&mut self.defers);
         for mut emit in defers.into_iter() {
             emit(self)?;
         }
@@ -440,7 +448,7 @@ impl Assembler {
         self.pc
     }
     fn symbol_lookup(&self, name: &str) -> Option<i32> {
-        self.symbols.get(name).map(|n| *n)
+        self.symbols.get(name).copied()
     }
     pub fn define_symbol(&mut self, name: &str, value: i32) {
         self.symbols.insert(name.into(), value);

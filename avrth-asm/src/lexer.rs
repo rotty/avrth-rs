@@ -94,7 +94,7 @@ where
     I::Error: ParseError<I::Token, I::Range, I::Position>,
 {
     let comment = byte(b';').with(skip_until(satisfy(|c| c == b'\n' || c == b'\r')));
-    skip_many(satisfy(|c: u8| is_hspace(c)))
+    skip_many(satisfy(is_hspace))
         .map(|_| ())
         .skip(optional(comment))
         .silent()

@@ -65,6 +65,7 @@ impl Expr {
     pub fn unary(op: UnaryOperator, e: Expr) -> Self {
         Expr::Unary(op, Box::new(e))
     }
+    #[allow(clippy::should_implement_trait)]
     pub fn add(e1: Expr, e2: Expr) -> Self {
         Self::binary(BinaryOperator::Add, e1, e2)
     }
@@ -312,7 +313,7 @@ mod tests {
         let (tokens, rest): (Vec<Token<'a>>, _) = lexer::tokens()
             .easy_parse(input.as_bytes())
             .map_err(|_| Error::Lex)?;
-        assert!(rest.len() == 0);
+        assert!(rest.is_empty());
         Ok(tokens)
     }
 
@@ -322,7 +323,7 @@ mod tests {
         Output: 'a + 'b, //P::Error: ParseError<Token<'a>, &'b [Token<'a>], stream::PointerOffset>,
     {
         let (result, rest) = p.easy_parse(tokens).map_err(|_| Error::Parse)?;
-        assert!(rest.len() == 0);
+        assert!(rest.is_empty());
         Ok(result)
     }
 

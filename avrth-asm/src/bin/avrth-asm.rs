@@ -136,7 +136,8 @@ impl Asm {
                     self.current_dir = path.parent().unwrap().to_path_buf();
                     return Ok(file);
                 }
-                Err(_) => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
             }
         }
         Err(io::Error::new(
