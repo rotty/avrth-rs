@@ -138,9 +138,9 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         let fpath = paths.add(options.fpath);
         let mut vm = Vm {
             parameters: Parameters {
-                sp0: sp0,
+                sp0,
                 rp0: rsp0,
-                fpath: fpath,
+                fpath,
             },
             current_dictionary: Dictionary::Target,
             current_word_name: None,
@@ -154,16 +154,16 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
             host_dict: Dict::new(
                 cast(options.flash_size),
                 cast(options.ram_size),
-                &[host_words.clone(), target_words.clone()],
+                &[host_words, target_words],
                 &[],
             ),
             primitives: HashMap::new(),
             target: options.target,
-            ram: ram,
-            code: code,
-            files: files,
+            ram,
+            code,
+            files,
             string_tables: Interns::new(0),
-            paths: paths,
+            paths,
             source_stack: vec![],
             current_source: C::zero(),
             sp: sp0,
@@ -210,7 +210,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
             } else {
                 let prim = *self.primitives.get(&code).ok_or_else(|| -> VmError {
                     // FIXME: context, "undefined interpreter" instead of (bogus) code
-                    VmError::forth_error(128).into()
+                    VmError::forth_error(128)
                 })?;
                 match prim(self) {
                     Err(e) => return Err(e),
@@ -342,15 +342,14 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
                     let do_sliteral_xt = self.word_xt("(sliteral)")?;
                     self.code_push(do_sliteral_xt);
                     let len = s.len();
-                    let bytes = s.as_bytes();
                     self.code_push(C::from_uint(len));
                     let dst = self.dp().into();
                     let mut acc = 0;
                     let cell_mask = size_of::<C>() - 1;
                     let mut cell_addr = dst;
-                    for idx in 0..len {
+                    for (idx, byte) in s.as_bytes().iter().copied().enumerate() {
                         let masked_idx = idx & cell_mask;
-                        acc = acc | ((bytes[idx] as usize) << (8 * masked_idx));
+                        acc |= (byte as usize) << (8 * masked_idx);
                         if masked_idx == cell_mask {
                             self.code[cell_addr] = C::from_uint(acc);
                             cell_addr += 1;
@@ -415,7 +414,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     fn current_word(&self) -> Option<Word<C>> {
         self.current_word_name
             .as_ref()
-            .and_then(|name| self.words().get(name).map(|w| w.clone()))
+            .and_then(|name| self.words().get(name).copied())
     }
 
     fn set_current_word_xt(&mut self, xt: C) {
@@ -496,7 +495,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
 
     pub fn stack_contents(&self) -> Vec<C> {
         let len = self.stack_len().into();
-        let mut contents = Vec::with_capacity(len.into());
+        let mut contents = Vec::with_capacity(len);
         for i in (0..len).rev() {
             let offset: C = NumCast::from(i).unwrap();
             contents.push(self.stack_rget(offset));
@@ -532,7 +531,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
 
     pub fn rstack_contents(&self) -> Vec<C> {
         let len = self.rstack_len().into();
-        let mut contents = Vec::with_capacity(len.into());
+        let mut contents = Vec::with_capacity(len);
         for i in (0..len).rev() {
             let offset: C = NumCast::from(i).unwrap();
             contents.push(self.rstack_rget(offset));
@@ -571,7 +570,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
     pub fn stdout_emit(&mut self, data: u8) -> Result<(), VmError> {
         self.stdout().and_then(|f| {
             let buf = [data; 1];
-            f.write(&buf)?;
+            f.write_all(&buf)?;
             f.flush()?;
             Ok(())
         })?;
@@ -621,7 +620,7 @@ impl<C: Cell, B: ByteOrder> Vm<C, B> {
         if error_number.is_zero() {
             Ok(())
         } else {
-            Err(VmError::forth_error(error_number).into())
+            Err(VmError::forth_error(error_number))
         }
     }
 

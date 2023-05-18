@@ -22,9 +22,9 @@ impl<C> WordList<C> {
         self.0.insert(
             name.into(),
             Word {
-                immediate: immediate,
-                hidden: hidden,
-                xt: xt,
+                immediate,
+                hidden,
+                xt,
             },
         );
     }
@@ -61,8 +61,8 @@ impl<C: Cell> Dict<C> {
         C: 'a,
     {
         Dict {
-            start: start,
-            here_start: here_start,
+            start,
+            here_start,
             word_lists: word_lists.into_iter().map(Rc::clone).collect(),
             immediate_word_lists: immediate_word_lists.into_iter().map(Rc::clone).collect(),
             dp: start,

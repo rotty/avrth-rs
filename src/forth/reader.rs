@@ -17,7 +17,7 @@ pub struct Reader<'a> {
 impl<'a> Reader<'a> {
     pub fn new(input: &'a str) -> Self {
         Reader {
-            input: input,
+            input,
             after_colon: false,
             pos: 0,
         }
@@ -75,7 +75,7 @@ impl<'a> Reader<'a> {
                 ("s\"", false) => bracketed(self, '"', Token::String),
                 _ => {
                     self.after_colon = false;
-                    if let Some(n) = token.parse().ok() {
+                    if let Ok(n) = token.parse() {
                         Some(Token::Int(n))
                     } else {
                         Some(Token::Ident(token))

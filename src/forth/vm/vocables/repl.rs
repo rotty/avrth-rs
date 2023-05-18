@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
-use std::io;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::str;
+use std::{io, writeln};
 
 use byteorder::ByteOrder;
 
@@ -84,18 +84,18 @@ where
     while address < end {
         let xt = vm.code_cell(C::from_uint(address));
         if xt == do_literal_xt {
-            write!(
+            writeln!(
                 output,
-                "{} {}\n",
+                "{} {}",
                 address,
                 vm.code_cell(C::from_uint(address + 1))
             )?;
             address += 2;
         } else {
             if let Some(name) = words.get(&xt) {
-                write!(output, "{} {}\n", address, name)?;
+                writeln!(output, "{} {}", address, name)?;
             } else {
-                write!(output, "{} ?? \\ {}\n", address, xt)?;
+                writeln!(output, "{} ?? \\ {}", address, xt)?;
             }
             address += 1;
         }

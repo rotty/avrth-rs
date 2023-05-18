@@ -29,13 +29,13 @@ impl Block {
     fn push(&mut self, n_bytes: usize, value: u32) {
         // TODO: Could be optimized not to call borrow_mut() twice
         let index = self.alloc(n_bytes);
-        Self::store(&*self.data, index, n_bytes, value);
+        Self::store(&self.data, index, n_bytes, value);
     }
     fn push_defer(&mut self, n_bytes: usize) -> impl FnMut(u32) {
         let index = self.alloc(n_bytes);
         let data = self.data.clone();
         move |value| {
-            Self::store(&*data, index, n_bytes, value);
+            Self::store(&data, index, n_bytes, value);
         }
     }
     #[allow(dead_code)]
@@ -68,9 +68,9 @@ fn rd_rr_encoder(opcode: u32, mask: u32) -> impl Fn(u32, u32) -> u32 {
     move |rd, rr| {
         let w = mask_(((rr | (rr << 5)) & 0x20F) | (rd << 4), opcode, mask);
         if w & 0xFC07 == 0x9000 {
-            (w & 0xEFFF) as u32
+            w & 0xEFFF
         } else {
-            w as u32
+            w
         }
     }
 }
@@ -109,10 +109,11 @@ impl fmt::Display for Expr {
 }
 
 type DeferredEmit = Box<dyn FnMut(&Assembler) -> Result<(), Error>>;
+type DeferredOperand = Box<dyn Fn(&Assembler) -> Result<u16, Error>>;
 
 enum Operand {
     Value(u16),
-    Deferred(Box<dyn Fn(&Assembler) -> Result<u16, Error>>),
+    Deferred(DeferredOperand),
 }
 
 impl Operand {
@@ -397,7 +398,7 @@ impl Assembler {
         }
         match *expr {
             Expr::Int(n) => Ok(Operand::Value(check_range(expr, n, n_bits)?)),
-            Expr::Ident(ref name) => match self.symbol_lookup(&name) {
+            Expr::Ident(ref name) => match self.symbol_lookup(name) {
                 Some(n) => Ok(Operand::Value(check_range(expr, n, n_bits)?)),
                 None => {
                     let name = name.clone();
@@ -410,10 +411,10 @@ impl Assembler {
                     })))
                 }
             },
-            Expr::Plus(ref exprs) => self.eval_arithmetic_op(&exprs, |assembler, operands| {
+            Expr::Plus(ref exprs) => self.eval_arithmetic_op(exprs, |assembler, operands| {
                 operands.iter().map(|op| op.resolve(assembler)).sum()
             }),
-            Expr::Minus(ref exprs) => self.eval_arithmetic_op(&exprs, |assembler, operands| {
+            Expr::Minus(ref exprs) => self.eval_arithmetic_op(exprs, |assembler, operands| {
                 let mut iter = operands.iter();
                 let mut result = iter
                     .next()

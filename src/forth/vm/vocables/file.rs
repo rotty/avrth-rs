@@ -40,7 +40,7 @@ pub fn load<C: Cell, B: ByteOrder>() -> anyhow::Result<Vocabulary<'static, C, B>
         fn run_open_file(vm, "open-file") {
             let fam = vm.stack_pop().unwrap();
             let path = vm.stack_pop_string();
-            match open_file(&path, fam) {
+            match open_file(path, fam) {
                 Ok(file) => {
                     let fileid = vm.intern_file(file);
                     vm.stack_push(fileid);

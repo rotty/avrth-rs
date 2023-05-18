@@ -68,7 +68,7 @@ pub fn run_io_test<C: Cell, B: ByteOrder>(
     let tokens: Vec<_> = Reader::new(code).tokens().collect();
     let stdout = RefCursor::new();
     let stderr = RefCursor::new();
-    let mut vm = make_vm(vocabularies.to_vec(), input, stdout.clone(), stderr.clone())?;
+    let mut vm = make_vm(vocabularies.to_vec(), input, stdout.clone(), stderr)?;
     let test_vocabulary = {
         let mut v = Vocabulary::new();
         v.define_forth_word("test", false, tokens);

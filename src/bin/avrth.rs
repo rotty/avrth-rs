@@ -64,7 +64,7 @@ where
         stdout: Box::new(stdout),
         stderr: Box::new(stderr),
         target: Box::new(ShimTarget::new()),
-        fpath: fpath,
+        fpath,
         layout: vec![(
             vm::Dictionary::Host,
             vec![
@@ -157,7 +157,7 @@ fn main() -> anyhow::Result<()> {
     let avrth = Avrth::from_args();
     match avrth.command {
         Some(Command::Compile { output, files }) => {
-            compile_program(file_or_stdout(output)?, &files, avrth.fpath)
+            compile_program(file_or_stdout(output)?, files, avrth.fpath)
         }
         Some(Command::Tethered { tty }) => run_tethered(&tty),
         Some(Command::Run { file }) => run_program(&file, avrth.fpath),

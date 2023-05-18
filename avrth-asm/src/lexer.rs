@@ -135,7 +135,7 @@ where
         .with(recognize(skip_many1(hex_digit())).map(|digits| (16, digits)))
     };
     choice((hex_digits(), decimal_digits())).and_then(|(base, digits): (_, &[u8])| {
-        let digits = str::from_utf8(&digits).unwrap();
+        let digits = str::from_utf8(digits).unwrap();
         i64::from_str_radix(digits, base)
             .map(Token::Int)
             .map_err(StreamErrorFor::<I>::other)

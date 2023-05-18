@@ -50,33 +50,35 @@ impl<'a, C: Cell, B: ByteOrder> fmt::Debug for Vocable<'a, C, B> {
 }
 
 /// An ordered collection of vocables
+#[derive(Debug)]
 pub struct Vocabulary<'a, C: Cell, B: ByteOrder> {
     vocables: HashMap<String, Vocable<'a, C, B>>,
     names: Vec<String>,
 }
 
-impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
-    pub fn new() -> Self {
+impl<'a, C: Cell, B: ByteOrder> Default for Vocabulary<'a, C, B> {
+    fn default() -> Self {
         Vocabulary {
             vocables: HashMap::new(),
             names: Vec::new(),
         }
     }
+}
+
+impl<'a, C: Cell, B: ByteOrder> Vocabulary<'a, C, B> {
+    pub fn new() -> Self {
+        Default::default()
+    }
 
     pub fn define_primitive(&mut self, name: &str, run: Primitive<C, B>) {
         self.vocables
-            .insert(name.into(), Vocable::Primitive { run: run });
+            .insert(name.into(), Vocable::Primitive { run });
         self.names.push(name.into());
     }
 
     pub fn define_forth_word(&mut self, name: &str, immediate: bool, code: Vec<Token<'a>>) {
-        self.vocables.insert(
-            name.into(),
-            Vocable::Forth {
-                immediate: immediate,
-                code: code,
-            },
-        );
+        self.vocables
+            .insert(name.into(), Vocable::Forth { immediate, code });
         self.names.push(name.into());
     }
 

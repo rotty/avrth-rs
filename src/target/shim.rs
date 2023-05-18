@@ -7,6 +7,12 @@ pub struct ShimTarget<C: Cell> {
     symbols: HashMap<String, C>,
 }
 
+impl<C: Cell> Default for ShimTarget<C> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<C: Cell> ShimTarget<C> {
     pub fn new() -> Self {
         ShimTarget {
