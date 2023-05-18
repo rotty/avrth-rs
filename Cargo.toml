@@ -13,7 +13,7 @@ thiserror = "1.0.26"
 num-traits = "0.2.5"
 byteorder = "1.2.6"
 log = "0.4.5"
-env_logger = "0.9.0"
+env_logger = "0.10.0"
 avrth-asm = { version = "0.0.1", path = "avrth-asm" }
 
 [dev-dependencies]
